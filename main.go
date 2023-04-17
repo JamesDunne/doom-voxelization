@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"os"
 )
@@ -69,27 +68,47 @@ func main() {
 	}
 
 	{
-		ok, offs, size := findLump("SARGA1")
+		ok, offs, size := findLump("TROOA1")
 		if !ok {
-			panic("could not find SARGA1")
+			panic("could not find TROOA1")
 		}
-		fmt.Printf("%s\t%x\t%x\n", "SARGA1  ", offs, size)
+		fmt.Printf("%s\t%x\t%x\n", "TROOA1  ", offs, size)
 
-		os.Stdout.WriteString(hex.Dump(wad[offs : offs+256]))
+		//os.Stdout.WriteString(hex.Dump(wad[offs : offs+256]))
+
 		spr := wad[offs : offs+size]
 
-		runCount := le.Uint16(spr[0:2])
+		{
+			runCount := le.Uint16(spr[0:2])
 
-		runs := make([][]byte, runCount)
-		nextOffs := size - 1
-		for i := int(runCount) - 1; i >= 0; i-- {
-			runOffs := le.Uint32(spr[8+i*4 : 8+i*4+4])
-			runs[i] = spr[runOffs:nextOffs]
-			nextOffs = runOffs
-			for j := range runs[i] {
-				fmt.Printf("%02x ", runs[i][j])
+			for i := 0; i < int(runCount); i++ {
+				runOffs := le.Uint32(spr[8+i*4 : 8+i*4+4])
+
+			posts:
+				for runOffs < size {
+					run := spr[runOffs:size]
+
+					ystart := int(run[0])
+					if ystart == 0xff {
+						break posts
+					}
+
+					fmt.Printf("\033[%dG", ystart*3+1)
+					//for j := 0; j < ystart; j++ {
+					//	fmt.Printf("   ")
+					//}
+
+					length := int(run[1])
+					// skip unused byte
+					runOffs += 3
+					for j := 3; j < 3+length; j++ {
+						fmt.Printf("%02x ", run[j])
+					}
+					runOffs += uint32(length)
+					runOffs++
+				}
+				fmt.Print("\n")
 			}
-			fmt.Print("\n")
 		}
 	}
 }
