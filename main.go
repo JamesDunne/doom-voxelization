@@ -32,7 +32,12 @@ func main() {
 	}
 
 	// find palette:
-	palLump := wc.FindLumpBetween("PLAYPAL", "", "")
+	palLump := wc.FindLumpBetween("", "", func(s string) bool {
+		if s == "PLAYPAL" {
+			return true
+		}
+		return false
+	})
 	if palLump == nil {
 		panic("could not find PLAYPAL")
 	}
@@ -50,10 +55,52 @@ func main() {
 	// find image extents of full rotation:
 	maxwidth := 0
 	maxheight := 0
-	for _, name := range []string{"TROOA1", "TROOA2C8", "TROOA3C7", "TROOA4C6", "TROOA5", "TROOC4A6", "TROOC3A7", "TROOC2A8"} {
-		lump := wc.FindLumpBetween(name, "S_START", "S_END")
+	lumps := [8]*Lump{}
+	lumpsFound := 0
+	baseName := "POSS"
+	wc.IterateLumpsBetween("S_START", "S_END", func(lump *Lump) bool {
+		s := lump.Name
+		if s[:4] != baseName {
+			return false
+		}
+
+		if len(s) >= 6 {
+			if s[4] == 'A' {
+				fmt.Printf("%s\n", s)
+				fr := s[5] - '0'
+				if fr >= 1 && fr <= 8 {
+					if lumps[fr-1] == nil {
+						lumps[fr-1] = lump
+						lumpsFound++
+					}
+				}
+				// break when 8 found:
+				return lumpsFound == 8
+			}
+		}
+
+		if len(s) == 8 {
+			if s[6] == 'A' {
+				fmt.Printf("%s\n", s)
+				fr := s[7] - '0'
+				if fr >= 1 && fr <= 8 {
+					if lumps[fr-1] == nil {
+						lump.HFlip = true
+						lumps[fr-1] = lump
+						lumpsFound++
+					}
+				}
+				// break when 8 found:
+				return lumpsFound == 8
+			}
+		}
+
+		return false
+	})
+
+	for p, lump := range lumps {
 		if lump == nil {
-			panic("could not find lump " + name)
+			panic(fmt.Sprintf("could not find lump A%d", p+1))
 		}
 		spr := lump.Data
 
@@ -74,12 +121,7 @@ func main() {
 		_, _ = leftoffs, topoffs
 	}
 
-	for p, name := range []string{"TROOA1", "TROOA2C8", "TROOA3C7", "TROOA4C6", "TROOA5", "TROOC4A6", "TROOC3A7", "TROOC2A8"} {
-		lump := wc.FindLumpBetween(name, "S_START", "S_END")
-		if lump == nil {
-			panic("could not find lump " + name)
-		}
-
+	for p, lump := range lumps {
 		spr := lump.Data
 		size := uint32(len(spr))
 
@@ -90,7 +132,7 @@ func main() {
 			topoffs := int(int16(le.Uint16(spr[6:8])))
 			_, _, _ = leftoffs, topoffs, height
 
-			fmt.Printf("%-8s: %d, %d\n", name, leftoffs, topoffs)
+			fmt.Printf("%sA%d: %d, %d\n", baseName, p+1, leftoffs, topoffs)
 
 			img := image.NewPaletted(image.Rect(0, 0, maxwidth, maxheight), pal)
 
@@ -112,7 +154,7 @@ func main() {
 					length := int(run[1])
 					// skip unused byte
 					runOffs += 3
-					if p >= 5 {
+					if lump.HFlip {
 						// h-flip:
 						for j := 3; j < 3+length; j++ {
 							img.SetColorIndex(xadj+width-1-i, yadj+ystart+j-3, run[j])
@@ -140,7 +182,7 @@ func main() {
 			//}
 
 			func() {
-				f, err := os.OpenFile(fmt.Sprintf("TROOA%d.png", p+1), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+				f, err := os.OpenFile(fmt.Sprintf("%sA%d.png", baseName, p+1), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 				if err != nil {
 					panic(err)
 				}
