@@ -1,82 +1,41 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	"os"
 )
 
-var le = binary.LittleEndian
-
-var wad []byte
-var sprStart, sprEnd uint32
-
-func findLump(name string) (ok bool, offs, size uint32) {
-	nameLen := uint32(len(name))
-	if nameLen > 8 {
-		nameLen = 8
-	}
-
-	for o := sprStart; o < sprEnd; o = o + 16 {
-		offs = le.Uint32(wad[o : o+4])
-		size = le.Uint32(wad[o+4 : o+8])
-		if bytes.Compare([]byte(name), wad[o+8:o+8+nameLen]) == 0 {
-			ok = true
-			return
-		}
-	}
-
-	return
-}
+var wc WADCollection
 
 func main() {
 	var err error
 
-	path := os.ExpandEnv("$DOOMWADDIR/doom2.wad")
-	wad, err = os.ReadFile(path)
+	iwadPath := os.ExpandEnv("$DOOMWADDIR/DOOM2.WAD")
+	err = wc.Load(iwadPath)
 	if err != nil {
 		panic(err)
 	}
 
-	//os.Stdout.WriteString(hex.Dump(wad[0:12]))
-
-	numEntries := le.Uint32(wad[4:8])
-	directoryOffs := le.Uint32(wad[8:12])
-
-	//os.Stdout.WriteString(hex.Dump(wad[directoryOffs : directoryOffs+256]))
-
-	for i, o := uint32(0), directoryOffs; i < numEntries; i, o = i+1, o+16 {
-		name := wad[o+8 : o+16]
-		if bytes.Compare([]byte("S_START\x00"), name) == 0 {
-			sprStart = o + 16
-		}
-		if bytes.Compare([]byte("S_END\x00\x00\x00"), name) == 0 {
-			sprEnd = o
-			break
-		}
+	pwadPath := os.ExpandEnv("$DOOMWADDIR/D2SPFX20.WAD")
+	err = wc.Load(pwadPath)
+	if err != nil {
+		panic(err)
 	}
 
-	if sprStart == 0 {
-		return
-	}
-
-	for o := sprStart; o < sprEnd; o = o + 16 {
-		offs := le.Uint32(wad[o : o+4])
-		size := le.Uint32(wad[o+4 : o+8])
-		fmt.Printf("%s\t%x\t%x\n", bytes.ReplaceAll(wad[o+8:o+16], []byte{0}, []byte{' '}), offs, size)
+	for _, wad := range wc.Ordered {
+		for _, lump := range wad.Lumps {
+			fmt.Printf("%-12s\t%-8s\t%x\n", wad.Name, lump.Name, len(lump.Data))
+		}
 	}
 
 	{
-		ok, offs, size := findLump("TROOA1")
-		if !ok {
-			panic("could not find TROOA1")
+		lump := wc.FindLumpBetween("TROOA2C8", "S_START", "S_END")
+		if lump == nil {
+			panic("could not find lump")
 		}
-		fmt.Printf("%s\t%x\t%x\n", "TROOA1  ", offs, size)
 
-		//os.Stdout.WriteString(hex.Dump(wad[offs : offs+256]))
-
-		spr := wad[offs : offs+size]
+		spr := lump.Data
+		size := uint32(len(spr))
 
 		{
 			runCount := le.Uint16(spr[0:2])
