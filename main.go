@@ -79,7 +79,8 @@ func main() {
 		0,
 	}
 
-	baseNames := []string{"CYBR", "SPID", "VILE", "POSS", "SPOS", "CPOS", "TROO", "SARG"}
+	baseNames := []string{"CYBR", "SPID"}
+	//baseNames := []string{"CYBR", "SPID", "VILE", "POSS", "SPOS", "CPOS", "TROO", "SARG"}
 	//baseNames := []string{"CYBR"}
 	for _, baseName := range baseNames {
 		frame := 0
@@ -241,20 +242,25 @@ func main() {
 
 			// trivial projections:
 			if true {
+				fmt.Printf("mdl-%s%c.vox: voxelize step 1/3\n", baseName, frameCh)
+
+				const step = 8
+				radius := float64(maxwidth) * 1.414213562373095
+				halfRadius := radius / 2.0
+
 				for i := range rotations {
 					img := rotations[reorder[i]]
 					for u := 0; u < maxwidth; u++ {
 						for v := 0; v < maxheight; v++ {
 							c := img.ColorIndexAt(u, v)
 							if c > 0 {
-								const step = 4
-								for t := 0; t < (maxwidth-1)*4; t++ {
+								for t := 0.0; t < radius*step; t++ {
 									p := [3]float64{
 										float64(u) - horizCenter,
 										0,
 										float64(v) - vertCenter,
 									}
-									p[1] += float64(t)*(1.0/step) - horizCenter
+									p[1] += float64(t)*(1.0/step) - halfRadius
 									p = vrotzangle(p, 1.5*math.Pi)
 									p = vrotzvec(p, cameraDirections[reorder[i]])
 
@@ -278,37 +284,39 @@ func main() {
 					}
 				}
 
-				for i := range rotations {
-					img := rotations[reorder[i]]
-					for u := 0; u < maxwidth; u++ {
-						for v := 0; v < maxheight; v++ {
-							c := img.ColorIndexAt(u, v)
-							if c == 0 {
-								const step = 4
-								for t := 0; t < (maxwidth-1)*4; t++ {
-									p := [3]float64{
-										float64(u) - horizCenter,
-										0,
-										float64(v) - vertCenter,
-									}
-									p[1] += float64(t)*(1.0/step) - horizCenter
-									p = vrotzangle(p, 1.5*math.Pi)
-									p = vrotzvec(p, cameraDirections[reorder[i]])
+				if true {
+					fmt.Printf("mdl-%s%c.vox: voxelize step 2/3\n", baseName, frameCh)
+					for i := range rotations {
+						img := rotations[reorder[i]]
+						for u := 0; u < maxwidth; u++ {
+							for v := 0; v < maxheight; v++ {
+								c := img.ColorIndexAt(u, v)
+								if c == 0 {
+									for t := 0.0; t < radius*step; t++ {
+										p := [3]float64{
+											float64(u) - horizCenter,
+											0,
+											float64(v) - vertCenter,
+										}
+										p[1] += float64(t)*(1.0/step) - halfRadius
+										p = vrotzangle(p, 1.5*math.Pi)
+										p = vrotzvec(p, cameraDirections[reorder[i]])
 
-									x := int(math.Round(p[0] + horizCenter))
-									if x < 0 || x >= maxwidth {
-										continue
-									}
-									y := int(math.Round(p[1] + horizCenter))
-									if y < 0 || y >= maxwidth {
-										continue
-									}
-									z := int(math.Round(p[2] + vertCenter))
-									if z < 0 || z >= maxheight {
-										continue
-									}
+										x := int(math.Round(p[0] + horizCenter))
+										if x < 0 || x >= maxwidth {
+											continue
+										}
+										y := int(math.Round(p[1] + horizCenter))
+										if y < 0 || y >= maxwidth {
+											continue
+										}
+										z := int(math.Round(p[2] + vertCenter))
+										if z < 0 || z >= maxheight {
+											continue
+										}
 
-									volume[x][y][maxheight-1-z] = false
+										volume[x][y][maxheight-1-z] = false
+									}
 								}
 							}
 						}
@@ -316,20 +324,20 @@ func main() {
 				}
 
 				// recolor the surfaces from each angle:
+				fmt.Printf("mdl-%s%c.vox: voxelize step 3/3\n", baseName, frameCh)
 				for i := range rotations {
 					img := rotations[reorder[i]]
 					for u := 0; u < maxwidth; u++ {
 						for v := 0; v < maxheight; v++ {
 							c := img.ColorIndexAt(u, v)
 							if c > 0 {
-								const step = 4
-								for t := 0; t < (maxwidth-1)*4; t++ {
+								for t := 0.0; t < radius*step; t++ {
 									p := [3]float64{
 										float64(u) - horizCenter,
 										0,
 										float64(v) - vertCenter,
 									}
-									p[1] += float64(t)*(1.0/step) - horizCenter
+									p[1] += float64(t)*(1.0/step) - halfRadius
 									p = vrotzangle(p, 1.5*math.Pi)
 									p = vrotzvec(p, cameraDirections[reorder[i]])
 
@@ -359,6 +367,7 @@ func main() {
 				}
 			}
 
+			fmt.Printf("mdl-%s%c.vox: saving...\n", baseName, frameCh)
 			err = saveVoxel(
 				os.ExpandEnv(
 					fmt.Sprintf("$HOME/Downloads/MagicaVoxel-0.99.6.2-macos-10.15/vox/mdl-%s%c.vox", baseName, frameCh),
@@ -370,6 +379,7 @@ func main() {
 				voxels,
 				volume,
 			)
+			fmt.Printf("mdl-%s%c.vox: saved\n", baseName, frameCh)
 		}
 	}
 }
