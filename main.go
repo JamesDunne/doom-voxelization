@@ -65,7 +65,7 @@ func main() {
 			0,
 		}
 
-		fmt.Printf("c[%d] = {%7.3f, %7.3f, %7.3f}\n", i, cameraDirections[i][0], cameraDirections[i][1], cameraDirections[i][2])
+		//fmt.Printf("c[%d] = {%7.3f, %7.3f, %7.3f}\n", i, cameraDirections[i][0], cameraDirections[i][1], cameraDirections[i][2])
 	}
 
 	reorder := []int{
@@ -142,7 +142,7 @@ func main() {
 				leftoffs := int(int16(le.Uint16(spr[4:6])))
 				topoffs := int(int16(le.Uint16(spr[6:8])))
 
-				width += leftoffs
+				width += leftoffs / 2
 				height += 16
 				if width > maxwidth {
 					maxwidth = width
