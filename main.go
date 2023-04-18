@@ -61,7 +61,7 @@ func main() {
 		w := 2 * math.Pi * float64((i+6)&7) / 8.0
 		cameraPos[i].Set(
 			math.Cos(w)*64,
-			0, //41+16,
+			41+16,
 			math.Sin(w)*64,
 		)
 
@@ -215,12 +215,13 @@ func main() {
 					for y := 0; y < maxheight; y++ {
 						worldPos.Y = float64(y) - float64(maxheight)/2.0
 
+						visibleColor := uint8(0)
 						for i := 0; i < 8; i++ {
 							dir := worldPos.Sub(&cameraPos[i])
 							dir.Normalize()
 
-							px := int(float64(maxwidth) * (math.Atan2(dir.X, dir.Z)/(2*math.Pi) + 0.5))
-							py := int(float64(maxheight) * (math.Atan2(dir.Y, math.Sqrt(dir.X*dir.X+dir.Z*dir.Z))/(1*math.Pi) + 0.5))
+							px := int(float64(maxwidth) * (math.Atan2(dir.X, dir.Z)/(math.Pi) + 0.5))
+							py := int(float64(maxheight) * (math.Atan2(dir.Y, math.Sqrt(dir.X*dir.X+dir.Z*dir.Z))/(math.Pi) + 0.5))
 
 							if px < 0 || py < 0 {
 								continue
@@ -231,87 +232,163 @@ func main() {
 
 							c := rotations[i].ColorIndexAt(px, py)
 							if c > 0 {
-								voxels[(z*maxwidth*maxheight)+y*maxwidth+x] = c
+								visibleColor = c
 								break
 							}
 						}
+
+						voxels[(z*maxwidth*maxheight)+y*maxwidth+x] = visibleColor
 					}
 				}
 			}
 
-			func() {
-				// Create output file
-				file, err := os.Create(fmt.Sprintf("mdl-%s%c.vox", baseName, frameCh))
-				if err != nil {
-					panic(err)
-				}
-				defer file.Close()
-
-				// Write header
-				file.Write([]byte("VOX "))
-				binary.Write(file, binary.LittleEndian, uint32(150))
-
-				// Write main chunk
-				file.Write([]byte("MAIN"))
-				binary.Write(file, binary.LittleEndian, uint32(0))
-				binary.Write(file, binary.LittleEndian, uint32(0))
-
-				file.Write([]byte("SIZE"))
-				binary.Write(file, binary.LittleEndian, uint32(0xC))
-				binary.Write(file, binary.LittleEndian, uint32(0))
-				binary.Write(file, binary.LittleEndian, uint32(maxwidth))  // x
-				binary.Write(file, binary.LittleEndian, uint32(maxheight)) // y
-				binary.Write(file, binary.LittleEndian, uint32(maxwidth))  // z
-
-				// Write voxel data
-				file.Write([]byte("XYZI"))
-				size := uint32(4)
-				count := uint32(0)
-				binary.Write(file, binary.LittleEndian, size)
-				binary.Write(file, binary.LittleEndian, uint32(0))
-				binary.Write(file, binary.LittleEndian, count)
-				for x := 0; x < maxwidth; x++ {
-					for y := 0; y < maxheight; y++ {
-						for z := 0; z < maxwidth; z++ {
-							c := voxels[(z*maxwidth*maxheight)+y*maxwidth+x]
-							if c != 0 {
-								file.Write([]byte{byte(x), byte(y), byte(z), c})
-								count++
-								size += 4
-							}
-						}
-					}
-				}
-
-				// rewrite XYZI header:
-				file.Seek(12*4, io.SeekStart)
-				binary.Write(file, binary.LittleEndian, size)
-				binary.Write(file, binary.LittleEndian, uint32(0))
-				binary.Write(file, binary.LittleEndian, count)
-
-				file.Seek(0, io.SeekEnd)
-
-				// Write palette
-				file.Write([]byte("RGBA"))
-				binary.Write(file, binary.LittleEndian, uint32(0x400))
-				binary.Write(file, binary.LittleEndian, uint32(0))
-				for _, c := range pal {
-					rgba := c.(color.NRGBA)
-					file.Write([]byte{
-						rgba.R,
-						rgba.G,
-						rgba.B,
-						rgba.A,
-					})
-				}
-
-				var fi os.FileInfo
-				fi, err = file.Stat()
-				mainSize := uint32(fi.Size()) - 0x14
-
-				file.Seek(4*4, io.SeekStart)
-				binary.Write(file, binary.LittleEndian, mainSize)
-			}()
+			err = saveVoxel(
+				os.ExpandEnv(
+					fmt.Sprintf("$HOME/Downloads/MagicaVoxel-0.99.6.2-macos-10.15/vox/mdl-%s%c.vox", baseName, frameCh),
+				),
+				uint32(maxwidth),
+				uint32(maxheight),
+				uint32(maxwidth),
+				pal,
+				voxels,
+			)
 		}
 	}
+}
+
+func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxels []byte) (err error) {
+	// Create VOX output file
+	var file *os.File
+	if file, err = os.Create(voxPath); err != nil {
+		return
+	}
+	defer file.Close()
+
+	// Write VOX header with version
+	if _, err = file.Write([]byte("VOX ")); err != nil {
+		return
+	}
+	if err = binary.Write(file, binary.LittleEndian, uint32(150)); err != nil {
+		return
+	}
+
+	// Write MAIN chunk to describe the size of the file
+	if _, err = file.Write([]byte("MAIN")); err != nil {
+		return
+	}
+	if err = binary.Write(file, binary.LittleEndian, uint32(0)); err != nil {
+		return
+	}
+	if err = binary.Write(file, binary.LittleEndian, uint32(0)); err != nil {
+		return
+	}
+
+	// Write SIZE chunk to describe the voxel dimensions
+	if _, err = file.Write([]byte("SIZE")); err != nil {
+		return
+	}
+	if err = binary.Write(file, binary.LittleEndian, uint32(0xC)); err != nil {
+		return
+	}
+	if err = binary.Write(file, binary.LittleEndian, uint32(0)); err != nil {
+		return
+	}
+	// x
+	if err = binary.Write(file, binary.LittleEndian, maxx); err != nil {
+		return
+	}
+	// y
+	if err = binary.Write(file, binary.LittleEndian, maxy); err != nil {
+		return
+	}
+	// z
+	if err = binary.Write(file, binary.LittleEndian, maxz); err != nil {
+		return
+	}
+
+	// Write XYZI voxel data for indexed-color voxels at X,Y,Z locations
+	if _, err = file.Write([]byte("XYZI")); err != nil {
+		return
+	}
+	size := uint32(4)
+	count := uint32(0)
+	if err = binary.Write(file, binary.LittleEndian, size); err != nil {
+		return
+	}
+	if err = binary.Write(file, binary.LittleEndian, uint32(0)); err != nil {
+		return
+	}
+	if err = binary.Write(file, binary.LittleEndian, count); err != nil {
+		return
+	}
+	for x := uint32(0); x < maxx; x++ {
+		for y := uint32(0); y < maxy; y++ {
+			for z := uint32(0); z < maxz; z++ {
+				c := voxels[(z*maxz*maxy)+y*maxx+x]
+				if c != 0 {
+					if _, err = file.Write([]byte{byte(x), byte(y), byte(z), c}); err != nil {
+						return
+					}
+					count++
+					size += 4
+				}
+			}
+		}
+	}
+
+	// rewrite XYZI header:
+	if _, err = file.Seek(12*4, io.SeekStart); err != nil {
+		return
+	}
+	if err = binary.Write(file, binary.LittleEndian, size); err != nil {
+		return
+	}
+	if err = binary.Write(file, binary.LittleEndian, uint32(0)); err != nil {
+		return
+	}
+	if err = binary.Write(file, binary.LittleEndian, count); err != nil {
+		return
+	}
+
+	if _, err = file.Seek(0, io.SeekEnd); err != nil {
+		return
+	}
+
+	// Write palette
+	if _, err = file.Write([]byte("RGBA")); err != nil {
+		return
+	}
+	if err = binary.Write(file, binary.LittleEndian, uint32(0x400)); err != nil {
+		return
+	}
+	if err = binary.Write(file, binary.LittleEndian, uint32(0)); err != nil {
+		return
+	}
+	for _, c := range pal {
+		rgba := c.(color.NRGBA)
+		if _, err = file.Write([]byte{
+			rgba.R,
+			rgba.G,
+			rgba.B,
+			rgba.A,
+		}); err != nil {
+			return
+		}
+	}
+
+	// calculate total file size and rewrite MAIN chunk:
+	var fileSize int64
+	if fileSize, err = file.Seek(0, io.SeekCurrent); err != nil {
+		return
+	}
+	mainSize := uint32(fileSize) - 0x14
+
+	if _, err = file.Seek(4*4, io.SeekStart); err != nil {
+		return
+	}
+	if err = binary.Write(file, binary.LittleEndian, mainSize); err != nil {
+		return
+	}
+
+	return
 }
