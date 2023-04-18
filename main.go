@@ -47,7 +47,7 @@ func main() {
 	// load palette:
 	pal := make(color.Palette, 0, 256)
 	for i := 0; i < 256; i++ {
-		pal = append(pal, color.NRGBA{
+		pal = append(pal, color.RGBA{
 			R: palLump.Data[i*3+0],
 			G: palLump.Data[i*3+1],
 			B: palLump.Data[i*3+2],
@@ -193,7 +193,7 @@ func main() {
 					rotations[p] = img
 
 					func() {
-						f, err := os.OpenFile(fmt.Sprintf("fr-%s%c%d.png", baseName, frameCh, p+1), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+						f, err := os.Create(fmt.Sprintf("fr-%s%c%d.png", baseName, frameCh, p+1))
 						if err != nil {
 							panic(err)
 						}
@@ -412,7 +412,7 @@ func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxel
 			for z := uint32(0); z < maxz; z++ {
 				if volume[x][y][z] {
 					c := voxels[x][y][z]
-					if _, err = file.Write([]byte{byte(x), byte(y), byte(z), c}); err != nil {
+					if _, err = file.Write([]byte{byte(x), byte(y), byte(z), c + 1}); err != nil {
 						return
 					}
 					count++
@@ -437,6 +437,7 @@ func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxel
 		return
 	}
 
+	// seek back to end:
 	if _, err = file.Seek(0, io.SeekEnd); err != nil {
 		return
 	}
@@ -452,7 +453,7 @@ func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxel
 		return
 	}
 	for _, c := range pal {
-		rgba := c.(color.NRGBA)
+		rgba := c.(color.RGBA)
 		if _, err = file.Write([]byte{
 			rgba.R,
 			rgba.G,
