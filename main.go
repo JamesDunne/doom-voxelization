@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/deeean/go-vector/vector3"
 	"image"
 	"image/color"
 	"image/png"
@@ -56,16 +55,18 @@ func main() {
 		})
 	}
 
-	cameraPos := [8]vector3.Vector3{}
+	// Calculate camera angles and directions
+	//cameraAngles := []float64{0, math.Pi / 4, math.Pi / 2, 3 * math.Pi / 4, math.Pi, 5 * math.Pi / 4, 3 * math.Pi / 2, 7 * math.Pi / 4}
+	cameraDirections := make([][3]float64, 8)
 	for i := 0; i < 8; i++ {
 		w := 2 * math.Pi * float64((i+6)&7) / 8.0
-		cameraPos[i].Set(
-			math.Cos(w)*64,
-			41+16,
-			math.Sin(w)*64,
-		)
+		cameraDirections[i] = [3]float64{
+			math.Cos(w),
+			-math.Sin(w),
+			0,
+		}
 
-		fmt.Printf("c[%d] = {%7.3f, %7.3f, %7.3f}\n", i, cameraPos[i].X, cameraPos[i].Y, cameraPos[i].Z)
+		fmt.Printf("c[%d] = {%7.3f, %7.3f, %7.3f}\n", i, cameraDirections[i][0], cameraDirections[i][1], cameraDirections[i][2])
 	}
 
 	//baseNames := []string{"POSS", "SPOS", "CPOS", "TROO", "SARG", "CYBR", "SPID", "VILE"}
@@ -205,39 +206,83 @@ func main() {
 				}
 			}
 
-			// attempt to voxelize:
-			voxels := make([]byte, maxwidth*maxheight*maxwidth)
-			worldPos := vector3.Vector3{}
-			for x := 0; x < maxwidth; x++ {
-				worldPos.X = float64(x) - float64(maxwidth)/2.0
-				for z := 0; z < maxwidth; z++ {
-					worldPos.Z = float64(z) - float64(maxwidth)/2.0
-					for y := 0; y < maxheight; y++ {
-						worldPos.Y = float64(y) - float64(maxheight)/2.0
+			// Create a voxel volume
+			// X - (width)
+			// Y / (depth)
+			// Z | (height)
+			voxels := make([][][]uint8, maxwidth)
+			for i := 0; i < maxwidth; i++ {
+				voxels[i] = make([][]uint8, maxwidth)
+				for j := 0; j < maxwidth; j++ {
+					voxels[i][j] = make([]uint8, maxheight)
+				}
+			}
 
-						visibleColor := uint8(0)
-						for i := 0; i < 8; i++ {
-							dir := worldPos.Sub(&cameraPos[i])
-							dir.Normalize()
+			volume := make([][][]bool, maxwidth)
+			for i := 0; i < maxwidth; i++ {
+				volume[i] = make([][]bool, maxwidth)
+				for j := 0; j < maxwidth; j++ {
+					volume[i][j] = make([]bool, maxheight)
+				}
+			}
 
-							px := int(float64(maxwidth) * (math.Atan2(dir.X, dir.Z)/(math.Pi) + 0.5))
-							py := int(float64(maxheight) * (math.Atan2(dir.Y, math.Sqrt(dir.X*dir.X+dir.Z*dir.Z))/(math.Pi) + 0.5))
+			if false {
+				// Iterate over each voxel in the volume
+				modelImages := rotations[:1]
+				for x := 0; x < maxwidth; x++ {
+					for y := 0; y < maxwidth; y++ {
+						for z := 0; z < maxheight; z++ {
+							// Project voxel onto each image
+							hitCount := 0
+							bestColor := uint8(0)
+							for i, img := range modelImages {
+								hit := false
+								rayDirection := cameraDirections[i]
+								rayStart := [3]float64{float64(x) - float64(maxwidth)/2, float64(y) - float64(maxwidth)/2, float64(z) - float64(maxheight)/2}
 
-							if px < 0 || py < 0 {
-								continue
+							imgScan:
+								for u := 0; u < maxwidth; u++ {
+									for v := 0; v < maxheight; v++ {
+										c := img.ColorIndexAt(u, v)
+										if c > 0 {
+											rayEnd := [3]float64{float64(u) - float64(maxwidth)/2, 0, float64(v) - float64(maxheight)/2}
+											intersection := intersects(rayStart, rayEnd, rayDirection)
+											if intersection[0] >= 0 && intersection[0] < float64(maxwidth) && intersection[2] >= 0 && intersection[2] < float64(maxheight) {
+												hit = true
+												// TODO: some way to determine color to assign to voxel:
+												if c > bestColor {
+													bestColor = c
+												}
+												break imgScan
+											}
+										}
+									}
+								}
+
+								if hit {
+									hitCount++
+								}
 							}
-							if px >= maxwidth || py >= maxheight {
-								continue
-							}
 
-							c := rotations[i].ColorIndexAt(px, py)
-							if c > 0 {
-								visibleColor = c
-								break
+							// Set voxel value based on number of hits
+							if hitCount >= 1 {
+								voxels[x][y][z] = bestColor
+								volume[x][y][z] = true
 							}
 						}
+					}
+				}
+			}
 
-						voxels[(z*maxwidth*maxheight)+y*maxwidth+x] = visibleColor
+			// try trivial projection:
+			if true {
+				for x := 0; x < maxwidth; x++ {
+					for y := 0; y < maxheight; y++ {
+						c := rotations[0].ColorIndexAt(x, y)
+						if c > 0 {
+							volume[x][maxwidth/2][maxheight-1-y] = true
+							voxels[x][maxwidth/2][maxheight-1-y] = c
+						}
 					}
 				}
 			}
@@ -247,16 +292,40 @@ func main() {
 					fmt.Sprintf("$HOME/Downloads/MagicaVoxel-0.99.6.2-macos-10.15/vox/mdl-%s%c.vox", baseName, frameCh),
 				),
 				uint32(maxwidth),
-				uint32(maxheight),
 				uint32(maxwidth),
+				uint32(maxheight),
 				pal,
 				voxels,
+				volume,
 			)
 		}
 	}
 }
 
-func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxels []byte) (err error) {
+// Check if a ray intersects with a plane
+func intersects(rayStart, rayEnd, planeNormal [3]float64) [3]float64 {
+	dir := [3]float64{rayEnd[0] - rayStart[0], rayEnd[1] - rayStart[1], rayEnd[2] - rayStart[2]}
+	denom := dot(planeNormal, dir)
+	if denom == 0 {
+		//return false
+		return [3]float64{math.NaN(), math.NaN(), math.NaN()}
+	}
+	t := dot(planeNormal, [3]float64{rayStart[0], rayStart[1], rayStart[2]}) / denom
+	if t < 0 {
+		//return false
+		return [3]float64{math.NaN(), math.NaN(), math.NaN()}
+	}
+	intersection := [3]float64{rayStart[0] + t*dir[0], rayStart[1] + t*dir[1], rayStart[2] + t*dir[2]}
+	//return intersection[0] >= 0 && intersection[0] < imageSize && intersection[1] >= 0 && intersection[1] < imageSize
+	return intersection
+}
+
+// Dot product of two 3D vectors
+func dot(a, b [3]float64) float64 {
+	return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+}
+
+func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxels [][][]byte, volume [][][]bool) (err error) {
 	// Create VOX output file
 	var file *os.File
 	if file, err = os.Create(voxPath); err != nil {
@@ -277,6 +346,11 @@ func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxel
 		return
 	}
 	if err = binary.Write(file, binary.LittleEndian, uint32(0)); err != nil {
+		return
+	}
+
+	var mainLenOffs int64
+	if mainLenOffs, err = file.Seek(0, io.SeekCurrent); err != nil {
 		return
 	}
 	if err = binary.Write(file, binary.LittleEndian, uint32(0)); err != nil {
@@ -310,6 +384,12 @@ func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxel
 	if _, err = file.Write([]byte("XYZI")); err != nil {
 		return
 	}
+
+	var offsSize int64
+	if offsSize, err = file.Seek(0, io.SeekCurrent); err != nil {
+		return
+	}
+
 	size := uint32(4)
 	count := uint32(0)
 	if err = binary.Write(file, binary.LittleEndian, size); err != nil {
@@ -318,14 +398,20 @@ func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxel
 	if err = binary.Write(file, binary.LittleEndian, uint32(0)); err != nil {
 		return
 	}
+
+	var offsCount int64
+	if offsCount, err = file.Seek(0, io.SeekCurrent); err != nil {
+		return
+	}
 	if err = binary.Write(file, binary.LittleEndian, count); err != nil {
 		return
 	}
+
 	for x := uint32(0); x < maxx; x++ {
 		for y := uint32(0); y < maxy; y++ {
 			for z := uint32(0); z < maxz; z++ {
-				c := voxels[(z*maxz*maxy)+y*maxx+x]
-				if c != 0 {
+				if volume[x][y][z] {
+					c := voxels[x][y][z]
 					if _, err = file.Write([]byte{byte(x), byte(y), byte(z), c}); err != nil {
 						return
 					}
@@ -337,13 +423,14 @@ func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxel
 	}
 
 	// rewrite XYZI header:
-	if _, err = file.Seek(12*4, io.SeekStart); err != nil {
+	if _, err = file.Seek(offsSize, io.SeekStart); err != nil {
 		return
 	}
 	if err = binary.Write(file, binary.LittleEndian, size); err != nil {
 		return
 	}
-	if err = binary.Write(file, binary.LittleEndian, uint32(0)); err != nil {
+
+	if _, err = file.Seek(offsCount, io.SeekStart); err != nil {
 		return
 	}
 	if err = binary.Write(file, binary.LittleEndian, count); err != nil {
@@ -383,7 +470,7 @@ func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxel
 	}
 	mainSize := uint32(fileSize) - 0x14
 
-	if _, err = file.Seek(4*4, io.SeekStart); err != nil {
+	if _, err = file.Seek(mainLenOffs, io.SeekStart); err != nil {
 		return
 	}
 	if err = binary.Write(file, binary.LittleEndian, mainSize); err != nil {
