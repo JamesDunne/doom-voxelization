@@ -56,10 +56,9 @@ func main() {
 	}
 
 	// Calculate camera angles and directions
-	//cameraAngles := []float64{0, math.Pi / 4, math.Pi / 2, 3 * math.Pi / 4, math.Pi, 5 * math.Pi / 4, 3 * math.Pi / 2, 7 * math.Pi / 4}
 	cameraDirections := make([][3]float64, 8)
 	for i := 0; i < 8; i++ {
-		w := (2.0 / 8.0) * math.Pi * float64((8-i+6)&7)
+		w := math.Pi * float64((8-i+6)&7) * (2.0 / 8.0)
 		cameraDirections[i] = [3]float64{
 			math.Cos(w),
 			-math.Sin(w),
@@ -69,8 +68,19 @@ func main() {
 		fmt.Printf("c[%d] = {%7.3f, %7.3f, %7.3f}\n", i, cameraDirections[i][0], cameraDirections[i][1], cameraDirections[i][2])
 	}
 
-	//baseNames := []string{"POSS", "SPOS", "CPOS", "TROO", "SARG", "CYBR", "SPID", "VILE"}
-	baseNames := []string{"POSS"}
+	reorder := []int{
+		1,
+		3,
+		5,
+		7,
+		2,
+		6,
+		4,
+		0,
+	}
+
+	baseNames := []string{"CYBR", "SPID", "VILE", "POSS", "SPOS", "CPOS", "TROO", "SARG"}
+	//baseNames := []string{"CYBR"}
 	for _, baseName := range baseNames {
 		frame := 0
 		{
@@ -229,102 +239,120 @@ func main() {
 			horizCenter := float64(maxwidth) / 2
 			vertCenter := float64(maxheight) / 2
 
-			if false {
-				// Iterate over each voxel in the volume
-				modelImages := rotations[:1]
-
-				for x := 0; x < maxwidth; x++ {
-					for y := 0; y < maxwidth; y++ {
-						for z := 0; z < maxheight; z++ {
-							// Project voxel onto each image
-							hitCount := 0
-							bestColor := uint8(0)
-							for i, img := range modelImages {
-								cameraDirection := cameraDirections[i]
-								rayStart := [3]float64{
-									float64(x) - horizCenter,
-									float64(y) - horizCenter,
-									float64(z) - vertCenter,
-								}
-
-							imgScan:
-								for u := 0; u < maxwidth; u++ {
-									for v := 0; v < maxheight; v++ {
-										c := img.ColorIndexAt(u, maxheight-1-v)
-										if c > 0 {
-											var possible bool
-											var point [3]float64
-											rayEnd := [3]float64{
-												float64(u) - horizCenter,
-												//0,
-												0 - horizCenter,
-												float64(v) - vertCenter,
-											}
-											//rayEnd = vcross(rayEnd, vneg(cameraDirection))
-
-											possible, point = intersects(rayStart, rayEnd, cameraDirection)
-											if !possible {
-												continue
-											}
-											//if point[0] >= -horizCenter && point[0] < horizCenter &&
-											//	point[2] >= -vertCenter && point[2] < vertCenter {
-											_ = point
-											{
-												c := img.ColorIndexAt(u, maxheight-1-v)
-												if c > 0 {
-													// TODO: pick best color of voxel:
-													if c > bestColor {
-														bestColor = c
-													}
-													hitCount++
-													break imgScan
-												}
-											}
-										}
-
+			// trivial projections:
+			if true {
+				for i := range rotations {
+					img := rotations[reorder[i]]
+					for u := 0; u < maxwidth; u++ {
+						for v := 0; v < maxheight; v++ {
+							c := img.ColorIndexAt(u, v)
+							if c > 0 {
+								const step = 4
+								for t := 0; t < (maxwidth-1)*4; t++ {
+									p := [3]float64{
+										float64(u) - horizCenter,
+										0,
+										float64(v) - vertCenter,
 									}
+									p[1] += float64(t)*(1.0/step) - horizCenter
+									p = vrotzangle(p, 1.5*math.Pi)
+									p = vrotzvec(p, cameraDirections[reorder[i]])
+
+									x := int(math.Round(p[0] + horizCenter))
+									if x < 0 || x >= maxwidth {
+										continue
+									}
+									y := int(math.Round(p[1] + horizCenter))
+									if y < 0 || y >= maxwidth {
+										continue
+									}
+									z := int(math.Round(p[2] + vertCenter))
+									if z < 0 || z >= maxheight {
+										continue
+									}
+									volume[x][y][maxheight-1-z] = true
+									voxels[x][y][maxheight-1-z] = c
 								}
-
-							}
-
-							// Set voxel value based on number of hits
-							if hitCount >= 1 {
-								voxels[x][y][z] = bestColor
-								volume[x][y][z] = true
 							}
 						}
 					}
 				}
-			}
 
-			// try trivial projection:
-			if true {
-				for u := 0; u < maxwidth; u++ {
-					for v := 0; v < maxheight; v++ {
-						for i, img := range rotations {
+				for i := range rotations {
+					img := rotations[reorder[i]]
+					for u := 0; u < maxwidth; u++ {
+						for v := 0; v < maxheight; v++ {
+							c := img.ColorIndexAt(u, v)
+							if c == 0 {
+								const step = 4
+								for t := 0; t < (maxwidth-1)*4; t++ {
+									p := [3]float64{
+										float64(u) - horizCenter,
+										0,
+										float64(v) - vertCenter,
+									}
+									p[1] += float64(t)*(1.0/step) - horizCenter
+									p = vrotzangle(p, 1.5*math.Pi)
+									p = vrotzvec(p, cameraDirections[reorder[i]])
+
+									x := int(math.Round(p[0] + horizCenter))
+									if x < 0 || x >= maxwidth {
+										continue
+									}
+									y := int(math.Round(p[1] + horizCenter))
+									if y < 0 || y >= maxwidth {
+										continue
+									}
+									z := int(math.Round(p[2] + vertCenter))
+									if z < 0 || z >= maxheight {
+										continue
+									}
+
+									volume[x][y][maxheight-1-z] = false
+								}
+							}
+						}
+					}
+				}
+
+				// recolor the surfaces from each angle:
+				for i := range rotations {
+					img := rotations[reorder[i]]
+					for u := 0; u < maxwidth; u++ {
+						for v := 0; v < maxheight; v++ {
 							c := img.ColorIndexAt(u, v)
 							if c > 0 {
-								p := [3]float64{
-									float64(u) - horizCenter,
-									0,
-									float64(v) - vertCenter,
-								}
-								p[1] -= 32
-								p = vrotzangle(p, 1.5*math.Pi)
-								p = vrotzvec(p, cameraDirections[i])
+								const step = 4
+								for t := 0; t < (maxwidth-1)*4; t++ {
+									p := [3]float64{
+										float64(u) - horizCenter,
+										0,
+										float64(v) - vertCenter,
+									}
+									p[1] += float64(t)*(1.0/step) - horizCenter
+									p = vrotzangle(p, 1.5*math.Pi)
+									p = vrotzvec(p, cameraDirections[reorder[i]])
 
-								x, y, z := int(p[0]+horizCenter), int(p[1]+horizCenter), int(p[2]+vertCenter)
-								if x < 0 || x >= maxwidth {
-									continue
+									x := int(math.Round(p[0] + horizCenter))
+									if x < 0 || x >= maxwidth {
+										continue
+									}
+									y := int(math.Round(p[1] + horizCenter))
+									if y < 0 || y >= maxwidth {
+										continue
+									}
+									z := int(math.Round(p[2] + vertCenter))
+									if z < 0 || z >= maxheight {
+										continue
+									}
+
+									voxels[x][y][maxheight-1-z] = c
+
+									// only color the surface:
+									if volume[x][y][maxheight-1-z] {
+										break
+									}
 								}
-								if y < 0 || y >= maxwidth {
-									continue
-								}
-								if z < 0 || z >= maxheight {
-									continue
-								}
-								volume[x][y][maxheight-1-z] = true
-								voxels[x][y][maxheight-1-z] = c
 							}
 						}
 					}
