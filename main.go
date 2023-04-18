@@ -59,7 +59,7 @@ func main() {
 	//cameraAngles := []float64{0, math.Pi / 4, math.Pi / 2, 3 * math.Pi / 4, math.Pi, 5 * math.Pi / 4, 3 * math.Pi / 2, 7 * math.Pi / 4}
 	cameraDirections := make([][3]float64, 8)
 	for i := 0; i < 8; i++ {
-		w := 2 * math.Pi * float64((8-i+6)&7) / 8.0
+		w := (2.0 / 8.0) * math.Pi * float64((8-i+6)&7)
 		cameraDirections[i] = [3]float64{
 			math.Cos(w),
 			-math.Sin(w),
@@ -226,12 +226,12 @@ func main() {
 				}
 			}
 
-			if true {
+			horizCenter := float64(maxwidth) / 2
+			vertCenter := float64(maxheight) / 2
+
+			if false {
 				// Iterate over each voxel in the volume
 				modelImages := rotations[:1]
-
-				horizCenter := float64(maxwidth) / 2
-				vertCenter := float64(maxheight) / 2
 
 				for x := 0; x < maxwidth; x++ {
 					for y := 0; y < maxwidth; y++ {
@@ -240,8 +240,7 @@ func main() {
 							hitCount := 0
 							bestColor := uint8(0)
 							for i, img := range modelImages {
-								hit := false
-								rayDirection := cameraDirections[i]
+								cameraDirection := cameraDirections[i]
 								rayStart := [3]float64{
 									float64(x) - horizCenter,
 									float64(y) - horizCenter,
@@ -253,33 +252,39 @@ func main() {
 									for v := 0; v < maxheight; v++ {
 										c := img.ColorIndexAt(u, maxheight-1-v)
 										if c > 0 {
+											var possible bool
+											var point [3]float64
 											rayEnd := [3]float64{
 												float64(u) - horizCenter,
-												0,
+												//0,
+												0 - horizCenter,
 												float64(v) - vertCenter,
 											}
+											//rayEnd = vcross(rayEnd, vneg(cameraDirection))
 
-											possible, intersection := intersects(rayStart, rayEnd, rayDirection)
+											possible, point = intersects(rayStart, rayEnd, cameraDirection)
 											if !possible {
 												continue
 											}
-
-											if intersection[0] >= -horizCenter && intersection[0] < horizCenter &&
-												intersection[2] >= -vertCenter && intersection[2] < vertCenter {
-												hit = true
-												// TODO: some way to determine color to assign to voxel:
-												if c > bestColor {
-													bestColor = c
+											//if point[0] >= -horizCenter && point[0] < horizCenter &&
+											//	point[2] >= -vertCenter && point[2] < vertCenter {
+											_ = point
+											{
+												c := img.ColorIndexAt(u, maxheight-1-v)
+												if c > 0 {
+													// TODO: pick best color of voxel:
+													if c > bestColor {
+														bestColor = c
+													}
+													hitCount++
+													break imgScan
 												}
-												break imgScan
 											}
 										}
+
 									}
 								}
 
-								if hit {
-									hitCount++
-								}
 							}
 
 							// Set voxel value based on number of hits
@@ -293,13 +298,34 @@ func main() {
 			}
 
 			// try trivial projection:
-			if false {
-				for x := 0; x < maxwidth; x++ {
-					for y := 0; y < maxheight; y++ {
-						c := rotations[0].ColorIndexAt(x, y)
-						if c > 0 {
-							volume[x][maxwidth/2][maxheight-1-y] = true
-							voxels[x][maxwidth/2][maxheight-1-y] = c
+			if true {
+				for u := 0; u < maxwidth; u++ {
+					for v := 0; v < maxheight; v++ {
+						for i, img := range rotations {
+							c := img.ColorIndexAt(u, v)
+							if c > 0 {
+								p := [3]float64{
+									float64(u) - horizCenter,
+									0,
+									float64(v) - vertCenter,
+								}
+								p[1] -= 32
+								p = vrotzangle(p, 1.5*math.Pi)
+								p = vrotzvec(p, cameraDirections[i])
+
+								x, y, z := int(p[0]+horizCenter), int(p[1]+horizCenter), int(p[2]+vertCenter)
+								if x < 0 || x >= maxwidth {
+									continue
+								}
+								if y < 0 || y >= maxwidth {
+									continue
+								}
+								if z < 0 || z >= maxheight {
+									continue
+								}
+								volume[x][y][maxheight-1-z] = true
+								voxels[x][y][maxheight-1-z] = c
+							}
 						}
 					}
 				}
@@ -330,14 +356,14 @@ func intersects(rayStart, rayEnd, planeNormal [3]float64) (possible bool, inters
 	}
 
 	// Check if ray is parallel to plane
-	denom := dot(planeNormal, dir)
+	denom := vdot(planeNormal, dir)
 	if denom == 0 {
 		possible = false
 		return
 	}
 
 	// Compute intersection point between ray and plane
-	t := dot(planeNormal, rayStart) / denom
+	t := vdot(planeNormal, rayStart) / denom
 	if t < 0 {
 		possible = false
 		return
@@ -354,8 +380,49 @@ func intersects(rayStart, rayEnd, planeNormal [3]float64) (possible bool, inters
 }
 
 // Dot product of two 3D vectors
-func dot(a, b [3]float64) float64 {
+func vdot(a, b [3]float64) float64 {
 	return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+}
+
+func vcross(a, b [3]float64) [3]float64 {
+	return [3]float64{
+		a[1]*b[2] - a[2]*b[1],
+		a[2]*b[0] - a[0]*b[2],
+		a[0]*b[1] - a[1]*b[0],
+	}
+}
+
+func vmul(a [3]float64, s float64) [3]float64 {
+	return [3]float64{
+		a[0] * s,
+		a[1] * s,
+		a[2] * s,
+	}
+}
+
+func vneg(a [3]float64) [3]float64 {
+	return [3]float64{
+		-a[0],
+		-a[1],
+		-a[2],
+	}
+}
+
+func vrotzangle(a [3]float64, theta float64) [3]float64 {
+	c, s := math.Cos(theta), math.Sin(theta)
+	return [3]float64{
+		a[0]*c - a[1]*s,
+		a[0]*s + a[1]*c,
+		a[2],
+	}
+}
+
+func vrotzvec(a [3]float64, v [3]float64) [3]float64 {
+	return [3]float64{
+		a[0]*v[0] - a[1]*v[1],
+		a[0]*v[1] + a[1]*v[0],
+		a[2],
+	}
 }
 
 func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxels [][][]byte, volume [][][]bool) (err error) {
