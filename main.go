@@ -1,12 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
-	"io"
 	"math"
 	"os"
 )
@@ -79,9 +79,10 @@ func main() {
 		0,
 	}
 
-	baseNames := []string{"CYBR", "SPID"}
+	//baseNames := []string{"CYBR", "SPID"}
 	//baseNames := []string{"CYBR", "SPID", "VILE", "POSS", "SPOS", "CPOS", "TROO", "SARG"}
-	//baseNames := []string{"CYBR"}
+	baseNames := []string{"CYBR"}
+	//baseNames := []string{"SPID"}
 	for _, baseName := range baseNames {
 		frame := 0
 		{
@@ -143,7 +144,6 @@ func main() {
 				leftoffs := int(int16(le.Uint16(spr[4:6])))
 				topoffs := int(int16(le.Uint16(spr[6:8])))
 
-				width += leftoffs / 2
 				height += 16
 				if width > maxwidth {
 					maxwidth = width
@@ -465,11 +465,7 @@ func vrotzvec(a [3]float64, v [3]float64) [3]float64 {
 
 func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxels [][][]byte, volume [][][]bool) (err error) {
 	// Create VOX output file
-	var file *os.File
-	if file, err = os.Create(voxPath); err != nil {
-		return
-	}
-	defer file.Close()
+	file := &bytes.Buffer{}
 
 	// Write VOX header with version
 	if _, err = file.Write([]byte("VOX ")); err != nil {
@@ -487,10 +483,7 @@ func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxel
 		return
 	}
 
-	var mainLenOffs int64
-	if mainLenOffs, err = file.Seek(0, io.SeekCurrent); err != nil {
-		return
-	}
+	var mainLenOffs = file.Len()
 	if err = binary.Write(file, binary.LittleEndian, uint32(0)); err != nil {
 		return
 	}
@@ -523,10 +516,7 @@ func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxel
 		return
 	}
 
-	var offsSize int64
-	if offsSize, err = file.Seek(0, io.SeekCurrent); err != nil {
-		return
-	}
+	var offsSize = file.Len()
 
 	size := uint32(4)
 	count := uint32(0)
@@ -537,10 +527,7 @@ func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxel
 		return
 	}
 
-	var offsCount int64
-	if offsCount, err = file.Seek(0, io.SeekCurrent); err != nil {
-		return
-	}
+	var offsCount = file.Len()
 	if err = binary.Write(file, binary.LittleEndian, count); err != nil {
 		return
 	}
@@ -558,26 +545,6 @@ func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxel
 				}
 			}
 		}
-	}
-
-	// rewrite XYZI header:
-	if _, err = file.Seek(offsSize, io.SeekStart); err != nil {
-		return
-	}
-	if err = binary.Write(file, binary.LittleEndian, size); err != nil {
-		return
-	}
-
-	if _, err = file.Seek(offsCount, io.SeekStart); err != nil {
-		return
-	}
-	if err = binary.Write(file, binary.LittleEndian, count); err != nil {
-		return
-	}
-
-	// seek back to end:
-	if _, err = file.Seek(0, io.SeekEnd); err != nil {
-		return
 	}
 
 	// Write palette
@@ -603,16 +570,22 @@ func saveVoxel(voxPath string, maxx, maxy, maxz uint32, pal color.Palette, voxel
 	}
 
 	// calculate total file size and rewrite MAIN chunk:
-	var fileSize int64
-	if fileSize, err = file.Seek(0, io.SeekCurrent); err != nil {
-		return
-	}
+	var fileSize int
+	fileSize = file.Len()
 	mainSize := uint32(fileSize) - 0x14
 
-	if _, err = file.Seek(mainLenOffs, io.SeekStart); err != nil {
-		return
-	}
-	if err = binary.Write(file, binary.LittleEndian, mainSize); err != nil {
+	// capture the buffer:
+	b := file.Bytes()
+
+	// patch over the buffer to fill in MAIN size:
+	binary.LittleEndian.PutUint32(b[mainLenOffs:mainLenOffs+4], mainSize)
+
+	// rewrite XYZI header:
+	binary.LittleEndian.PutUint32(b[offsSize:offsSize+4], size)
+	binary.LittleEndian.PutUint32(b[offsCount:offsCount+4], count)
+
+	// write the file:
+	if err = os.WriteFile(voxPath, b, 0644); err != nil {
 		return
 	}
 
