@@ -1,6 +1,8 @@
 package main
 
 import (
+	"awesomeProject/matrix4"
+	"awesomeProject/vector3"
 	"bytes"
 	"encoding/binary"
 	"fmt"
@@ -60,16 +62,10 @@ func main() {
 	}
 
 	// Calculate camera angles and directions
-	cameraDirections := make([][3]float64, 8)
+	cameraTransforms := [8]matrix4.M{}
 	for i := 0; i < 8; i++ {
-		w := math.Pi * float64((8-i+6)&7) * (2.0 / 8.0)
-		cameraDirections[i] = [3]float64{
-			math.Cos(w),
-			-math.Sin(w),
-			0,
-		}
-
-		//fmt.Printf("c[%d] = {%7.3f, %7.3f, %7.3f}\n", i, cameraDirections[i][0], cameraDirections[i][1], cameraDirections[i][2])
+		w := math.Pi * float64(i&7) * (2.0 / 8.0)
+		cameraTransforms[i] = matrix4.RotationZ(w)
 	}
 
 	reorder := []int{
@@ -84,8 +80,8 @@ func main() {
 	}
 
 	//baseNames := []string{"CYBR", "SPID", "VILE", "POSS", "SPOS", "CPOS", "TROO", "SARG"}
-	baseNames := []string{"CYBR", "SPID"}
-	//baseNames := []string{"CYBR"}
+	//baseNames := []string{"CYBR", "SPID"}
+	baseNames := []string{"CYBR"}
 	//baseNames := []string{"SPID"}
 	for _, baseName := range baseNames {
 		frame := 0
@@ -248,40 +244,38 @@ func main() {
 			horizCenter := float64(maxwidth) / 2
 			vertCenter := float64(maxheight) / 2
 
-			// trivial projections:
+			const step = 4
+			radius := float64(maxwidth) * 1.414213562373095
+			halfRadius := radius / 2.0
+
 			if true {
 				fmt.Printf("mdl-%s%c.vox: voxelize step 1/3\n", baseName, frameCh)
-
-				const step = 4
-				radius := float64(maxwidth) * 1.414213562373095
-				halfRadius := radius / 2.0
 
 				if true {
 					for i := range reorder {
 						img := rotations[reorder[i]]
+
 						for u := 0; u < maxwidth; u++ {
 							for v := 0; v < maxheight; v++ {
 								c := img.ColorIndexAt(u, v)
 								if c != 0xFF {
 									for t := 0.0; t < radius*step; t++ {
-										p := [3]float64{
-											float64(u) - horizCenter,
-											0,
-											float64(v) - vertCenter,
+										p := vector3.V{
+											X: float64(u) - horizCenter,
+											Y: float64(t)*(1.0/step) - halfRadius,
+											Z: float64(v) - vertCenter,
 										}
-										p[1] = float64(t)*(1.0/step) - halfRadius
-										p = vrotzangle(p, 1.5*math.Pi)
-										p = vrotzvec(p, cameraDirections[reorder[i]])
+										p = cameraTransforms[reorder[i]].Transform(p)
 
-										x := int(math.Round(p[0] + horizCenter))
+										x := int(math.Round(p.X + horizCenter))
 										if x < 0 || x >= maxwidth {
 											continue
 										}
-										y := int(math.Round(p[1] + horizCenter))
+										y := int(math.Round(p.Y + horizCenter))
 										if y < 0 || y >= maxwidth {
 											continue
 										}
-										z := int(math.Round(p[2] + vertCenter))
+										z := int(math.Round(p.Z + vertCenter))
 										if z < 0 || z >= maxheight {
 											continue
 										}
@@ -313,24 +307,22 @@ func main() {
 								c := img.ColorIndexAt(u, v)
 								if c == 0xFF {
 									for t := 0.0; t < radius*step; t++ {
-										p := [3]float64{
-											float64(u) - horizCenter,
-											0,
-											float64(v) - vertCenter,
+										p := vector3.V{
+											X: float64(u) - horizCenter,
+											Y: float64(t)*(1.0/step) - halfRadius,
+											Z: float64(v) - vertCenter,
 										}
-										p[1] = float64(t)*(1.0/step) - halfRadius
-										p = vrotzangle(p, 1.5*math.Pi)
-										p = vrotzvec(p, cameraDirections[reorder[i]])
+										p = cameraTransforms[reorder[i]].Transform(p)
 
-										x := int(math.Round(p[0] + horizCenter))
+										x := int(math.Round(p.X + horizCenter))
 										if x < 0 || x >= maxwidth {
 											continue
 										}
-										y := int(math.Round(p[1] + horizCenter))
+										y := int(math.Round(p.Y + horizCenter))
 										if y < 0 || y >= maxwidth {
 											continue
 										}
-										z := int(math.Round(p[2] + vertCenter))
+										z := int(math.Round(p.Z + vertCenter))
 										if z < 0 || z >= maxheight {
 											continue
 										}
@@ -345,52 +337,50 @@ func main() {
 						for u := maxwidth; u < int(float64(maxwidth)*1.4142136); u++ {
 							for v := 0; v < maxheight; v++ {
 								for t := 0.0; t < radius*step; t++ {
-									p := [3]float64{
-										float64(u) - horizCenter,
-										0,
-										float64(v) - vertCenter,
+									p := vector3.V{
+										X: float64(u) - horizCenter,
+										Y: float64(t)*(1.0/step) - halfRadius,
+										Z: float64(v) - vertCenter,
 									}
-									p[1] = float64(t)*(1.0/step) - halfRadius
-									p = vrotzangle(p, 1.5*math.Pi)
-									p = vrotzvec(p, cameraDirections[reorder[i]])
+									p = cameraTransforms[reorder[i]].Transform(p)
 
-									x := int(math.Round(p[0] + horizCenter))
+									x := int(math.Round(p.X + horizCenter))
 									if x < 0 || x >= maxwidth {
 										continue
 									}
-									y := int(math.Round(p[1] + horizCenter))
+									y := int(math.Round(p.Y + horizCenter))
 									if y < 0 || y >= maxwidth {
 										continue
 									}
-									z := int(math.Round(p[2] + vertCenter))
+									z := int(math.Round(p.Z + vertCenter))
 									if z < 0 || z >= maxheight {
 										continue
 									}
+
 									volume[x][y][maxheight-1-z] = false
 								}
 
 								for t := 0.0; t < radius*step; t++ {
-									p := [3]float64{
-										float64(maxwidth-u) - horizCenter,
-										0,
-										float64(v) - vertCenter,
+									p := vector3.V{
+										X: float64(maxwidth-u) - horizCenter,
+										Y: float64(t)*(1.0/step) - halfRadius,
+										Z: float64(v) - vertCenter,
 									}
-									p[1] = float64(t)*(1.0/step) - halfRadius
-									p = vrotzangle(p, 1.5*math.Pi)
-									p = vrotzvec(p, cameraDirections[reorder[i]])
+									p = cameraTransforms[reorder[i]].Transform(p)
 
-									x := int(math.Round(p[0] + horizCenter))
+									x := int(math.Round(p.X + horizCenter))
 									if x < 0 || x >= maxwidth {
 										continue
 									}
-									y := int(math.Round(p[1] + horizCenter))
+									y := int(math.Round(p.Y + horizCenter))
 									if y < 0 || y >= maxwidth {
 										continue
 									}
-									z := int(math.Round(p[2] + vertCenter))
+									z := int(math.Round(p.Z + vertCenter))
 									if z < 0 || z >= maxheight {
 										continue
 									}
+
 									volume[x][y][maxheight-1-z] = false
 								}
 							}
@@ -399,43 +389,78 @@ func main() {
 				}
 
 				// recolor the surfaces from each angle:
-				fmt.Printf("mdl-%s%c.vox: voxelize step 3/3\n", baseName, frameCh)
-				for i := range reorder {
-					img := rotations[reorder[i]]
+				if true {
+					fmt.Printf("mdl-%s%c.vox: voxelize step 3/3\n", baseName, frameCh)
+					for i := range reorder {
+						img := rotations[reorder[i]]
+						for u := 0; u < maxwidth; u++ {
+							for v := 0; v < maxheight; v++ {
+								c := img.ColorIndexAt(u, v)
+								if c != 0xFF {
+									for t := 0.0; t < radius*step; t++ {
+										p := vector3.V{
+											X: float64(u) - horizCenter,
+											Y: float64(t)*(1.0/step) - halfRadius,
+											Z: float64(v) - vertCenter,
+										}
+										p = cameraTransforms[reorder[i]].Transform(p)
+
+										x := int(math.Round(p.X + horizCenter))
+										if x < 0 || x >= maxwidth {
+											continue
+										}
+										y := int(math.Round(p.Y + horizCenter))
+										if y < 0 || y >= maxwidth {
+											continue
+										}
+										z := int(math.Round(p.Z + vertCenter))
+										if z < 0 || z >= maxheight {
+											continue
+										}
+
+										voxels[x][y][maxheight-1-z] = c
+
+										// only color the surface:
+										if volume[x][y][maxheight-1-z] {
+											break
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			} else {
+				// projection and rotation test:
+				for i := 0; i < 8; i++ {
+					img := rotations[i]
+
 					for u := 0; u < maxwidth; u++ {
 						for v := 0; v < maxheight; v++ {
 							c := img.ColorIndexAt(u, v)
 							if c != 0xFF {
-								for t := 0.0; t < radius*step; t++ {
-									p := [3]float64{
-										float64(u) - horizCenter,
-										0,
-										float64(v) - vertCenter,
-									}
-									p[1] = float64(t)*(1.0/step) - halfRadius
-									p = vrotzangle(p, 1.5*math.Pi)
-									p = vrotzvec(p, cameraDirections[reorder[i]])
-
-									x := int(math.Round(p[0] + horizCenter))
-									if x < 0 || x >= maxwidth {
-										continue
-									}
-									y := int(math.Round(p[1] + horizCenter))
-									if y < 0 || y >= maxwidth {
-										continue
-									}
-									z := int(math.Round(p[2] + vertCenter))
-									if z < 0 || z >= maxheight {
-										continue
-									}
-
-									voxels[x][y][maxheight-1-z] = c
-
-									// only color the surface:
-									if volume[x][y][maxheight-1-z] {
-										break
-									}
+								p := vector3.V{
+									X: float64(u) - horizCenter,
+									Y: -42,
+									Z: float64(v) - vertCenter,
 								}
+								p = cameraTransforms[i].Transform(p)
+
+								x := int(math.Round(p.X + horizCenter))
+								if x < 0 || x >= maxwidth {
+									continue
+								}
+								y := int(math.Round(p.Y + horizCenter))
+								if y < 0 || y >= maxwidth {
+									continue
+								}
+								z := int(math.Round(p.Z + vertCenter))
+								if z < 0 || z >= maxheight {
+									continue
+								}
+
+								volume[x][y][maxheight-1-z] = true
+								voxels[x][y][maxheight-1-z] = c
 							}
 						}
 					}
@@ -495,30 +520,6 @@ func intersects(rayStart, rayEnd, planeNormal [3]float64) (possible bool, inters
 // Dot product of two 3D vectors
 func vdot(a, b [3]float64) float64 {
 	return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
-}
-
-func vcross(a, b [3]float64) [3]float64 {
-	return [3]float64{
-		a[1]*b[2] - a[2]*b[1],
-		a[2]*b[0] - a[0]*b[2],
-		a[0]*b[1] - a[1]*b[0],
-	}
-}
-
-func vmul(a [3]float64, s float64) [3]float64 {
-	return [3]float64{
-		a[0] * s,
-		a[1] * s,
-		a[2] * s,
-	}
-}
-
-func vneg(a [3]float64) [3]float64 {
-	return [3]float64{
-		-a[0],
-		-a[1],
-		-a[2],
-	}
 }
 
 func vrotzangle(a [3]float64, theta float64) [3]float64 {
