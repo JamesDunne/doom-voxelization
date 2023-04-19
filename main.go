@@ -68,6 +68,12 @@ func main() {
 		cameraTransforms[i] = matrix4.RotationZ(w)
 	}
 
+	//cameraTransforms[1] = cameraTransforms[1].Multiply(matrix4.RotationZ(math.Pi * 5.0 / 360.0))
+	//cameraTransforms[7] = cameraTransforms[7].Multiply(matrix4.RotationZ(math.Pi * -5.0 / 360.0))
+
+	//cameraTransforms[3] = cameraTransforms[3].Multiply(matrix4.RotationZ(math.Pi * -5.0 / 360.0))
+	//cameraTransforms[5] = cameraTransforms[5].Multiply(matrix4.RotationZ(math.Pi * 5.0 / 360.0))
+
 	reorder := []int{
 		1,
 		3,
@@ -80,13 +86,38 @@ func main() {
 	}
 
 	//baseNames := []string{"CYBR", "SPID", "VILE", "POSS", "SPOS", "CPOS", "TROO", "SARG"}
-	//baseNames := []string{"CYBR", "SPID"}
-	baseNames := []string{"CYBR"}
+	baseNames := []string{"CYBR", "SPID"}
+	//baseNames := []string{"CYBR"}
 	//baseNames := []string{"SPID"}
+
+	// left, top:
+	postAdj := make(map[string]*[8][2]int)
+
+	postAdj["CYBRA"] = &[8][2]int{}
+	postAdj["CYBRA"][0] = [2]int{0, -2}
+	postAdj["CYBRA"][1] = [2]int{0, -2}
+	postAdj["CYBRA"][2] = [2]int{0, -2}
+	postAdj["CYBRA"][3] = [2]int{0, -2}
+	postAdj["CYBRA"][4] = [2]int{0, -2}
+	postAdj["CYBRA"][5] = [2]int{0, -1}
+	postAdj["CYBRA"][6] = [2]int{0, -1}
+	postAdj["CYBRA"][7] = [2]int{0, -1}
+
+	postAdj["SPIDA"] = &[8][2]int{}
+	postAdj["SPIDA"][0] = [2]int{0, 0}
+	postAdj["SPIDA"][1] = [2]int{0, 0}
+	postAdj["SPIDA"][2] = [2]int{0, 3}
+	postAdj["SPIDA"][3] = [2]int{0, 3}
+	postAdj["SPIDA"][4] = [2]int{0, 7}
+	postAdj["SPIDA"][5] = [2]int{0, 2}
+	postAdj["SPIDA"][6] = [2]int{0, 2}
+	postAdj["SPIDA"][7] = [2]int{0, 2}
+
 	for _, baseName := range baseNames {
 		frame := 0
 		{
 			frameCh := uint8('A' + frame)
+			baseFrameLumpName := fmt.Sprintf("%s%c", baseName, frameCh)
 
 			// find all 8 sprite rotations:
 			lumps := [8]*Lump{}
@@ -171,6 +202,13 @@ func main() {
 					for i := range img.Pix {
 						img.Pix[i] = 0xFF
 					}
+
+					if adj, ok := postAdj[baseFrameLumpName]; ok && adj != nil {
+						leftoffs += adj[p][0]
+						topoffs += adj[p][1]
+					}
+
+					fmt.Printf("%s%d: (%d, %d)\n", baseFrameLumpName, p+1, leftoffs, topoffs)
 
 					xadj := maxwidth/2 - leftoffs
 					yadj := maxheight - 16 - topoffs
