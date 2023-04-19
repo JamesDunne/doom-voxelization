@@ -54,6 +54,10 @@ func main() {
 			A: 255,
 		})
 	}
+	{
+		col := pal[0xFF].(color.RGBA)
+		col.A = 0
+	}
 
 	// Calculate camera angles and directions
 	cameraDirections := make([][3]float64, 8)
@@ -166,7 +170,11 @@ func main() {
 					topoffs := int(int16(le.Uint16(spr[6:8])))
 					_, _, _ = leftoffs, topoffs, height
 
-					img := image.NewPaletted(image.Rect(0, 0, maxwidth, maxheight), pal)
+					rect := image.Rect(0, 0, maxwidth, maxheight)
+					img := image.NewPaletted(rect, pal)
+					for i := range img.Pix {
+						img.Pix[i] = 0xFF
+					}
 
 					xadj := maxwidth/2 - leftoffs
 					yadj := maxheight - 16 - topoffs
@@ -248,37 +256,48 @@ func main() {
 				radius := float64(maxwidth) * 1.414213562373095
 				halfRadius := radius / 2.0
 
-				for i := range reorder {
-					img := rotations[reorder[i]]
-					for u := 0; u < maxwidth; u++ {
-						for v := 0; v < maxheight; v++ {
-							c := img.ColorIndexAt(u, v)
-							if c > 0 {
-								for t := 0.0; t < radius*step; t++ {
-									p := [3]float64{
-										float64(u) - horizCenter,
-										0,
-										float64(v) - vertCenter,
-									}
-									p[1] = float64(t)*(1.0/step) - halfRadius
-									p = vrotzangle(p, 1.5*math.Pi)
-									p = vrotzvec(p, cameraDirections[reorder[i]])
+				if true {
+					for i := range reorder {
+						img := rotations[reorder[i]]
+						for u := 0; u < maxwidth; u++ {
+							for v := 0; v < maxheight; v++ {
+								c := img.ColorIndexAt(u, v)
+								if c != 0xFF {
+									for t := 0.0; t < radius*step; t++ {
+										p := [3]float64{
+											float64(u) - horizCenter,
+											0,
+											float64(v) - vertCenter,
+										}
+										p[1] = float64(t)*(1.0/step) - halfRadius
+										p = vrotzangle(p, 1.5*math.Pi)
+										p = vrotzvec(p, cameraDirections[reorder[i]])
 
-									x := int(math.Round(p[0] + horizCenter))
-									if x < 0 || x >= maxwidth {
-										continue
+										x := int(math.Round(p[0] + horizCenter))
+										if x < 0 || x >= maxwidth {
+											continue
+										}
+										y := int(math.Round(p[1] + horizCenter))
+										if y < 0 || y >= maxwidth {
+											continue
+										}
+										z := int(math.Round(p[2] + vertCenter))
+										if z < 0 || z >= maxheight {
+											continue
+										}
+
+										volume[x][y][maxheight-1-z] = true
+										voxels[x][y][maxheight-1-z] = c
 									}
-									y := int(math.Round(p[1] + horizCenter))
-									if y < 0 || y >= maxwidth {
-										continue
-									}
-									z := int(math.Round(p[2] + vertCenter))
-									if z < 0 || z >= maxheight {
-										continue
-									}
-									volume[x][y][maxheight-1-z] = true
-									voxels[x][y][maxheight-1-z] = c
 								}
+							}
+						}
+					}
+				} else {
+					for x := 0; x < maxwidth; x++ {
+						for y := 0; y < maxwidth; y++ {
+							for z := 0; z < maxheight; z++ {
+								volume[x][y][z] = true
 							}
 						}
 					}
@@ -288,10 +307,11 @@ func main() {
 					fmt.Printf("mdl-%s%c.vox: voxelize step 2/3\n", baseName, frameCh)
 					for i := range reorder {
 						img := rotations[reorder[i]]
+
 						for u := 0; u < maxwidth; u++ {
 							for v := 0; v < maxheight; v++ {
 								c := img.ColorIndexAt(u, v)
-								if c == 0 {
+								if c == 0xFF {
 									for t := 0.0; t < radius*step; t++ {
 										p := [3]float64{
 											float64(u) - horizCenter,
@@ -385,7 +405,7 @@ func main() {
 					for u := 0; u < maxwidth; u++ {
 						for v := 0; v < maxheight; v++ {
 							c := img.ColorIndexAt(u, v)
-							if c > 0 {
+							if c != 0xFF {
 								for t := 0.0; t < radius*step; t++ {
 									p := [3]float64{
 										float64(u) - horizCenter,
