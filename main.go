@@ -182,7 +182,7 @@ func main() {
 				return lumpsFound == 8
 			})
 
-			xmin := 256
+			xmin := 384
 			ymin := 256
 			xmax := 0
 			ymax := 0
@@ -198,7 +198,7 @@ func main() {
 				topoffs := int(int16(le.Uint16(spr[6:8])))
 				_, _, _ = leftoffs, topoffs, height
 
-				rect := image.Rect(0, 0, 256, 256)
+				rect := image.Rect(0, 0, 384, 256)
 				img := image.NewPaletted(rect, pal)
 				for i := range img.Pix {
 					img.Pix[i] = 0xFF
@@ -211,7 +211,7 @@ func main() {
 
 				fmt.Printf("%s%d: (%d, %d)\n", baseFrameLumpName, p+1, leftoffs, topoffs)
 
-				xadj := 256/2 - leftoffs
+				xadj := 384/2 - leftoffs
 				yadj := 256 - 16 - topoffs
 
 				for i := 0; i < width; i++ {
