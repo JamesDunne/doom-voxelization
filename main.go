@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/png"
 	"math"
 	"os"
@@ -64,9 +65,33 @@ func main() {
 	// Calculate camera angles and directions
 	cameraTransforms := [8]matrix4.M{}
 	for i := 0; i < 8; i++ {
-		w := math.Pi * float64(i&7) * (2.0 / 8.0)
+		w := math.Pi * 2.0 * (float64(i) / 8.0)
 		cameraTransforms[i] = matrix4.RotationZ(w)
 	}
+	// adjust near-zeros to zeros:
+	cameraTransforms[0][1] = 0
+	cameraTransforms[0][4] = 0
+	cameraTransforms[2][0] = 0
+	cameraTransforms[2][5] = 0
+	cameraTransforms[4][1] = 0
+	cameraTransforms[4][4] = 0
+	cameraTransforms[6][0] = 0
+	cameraTransforms[6][5] = 0
+
+	//	for i := 0; i < 8; i++ {
+	//		fmt.Printf(`
+	//t[%d] = %25.22f %25.22f %25.22f %25.22f
+	//       %25.22f %25.22f %25.22f %25.22f
+	//       %25.22f %25.22f %25.22f %25.22f
+	//       %25.22f %25.22f %25.22f %25.22f
+	//`,
+	//			i,
+	//			cameraTransforms[i][0], cameraTransforms[i][1], cameraTransforms[i][2], cameraTransforms[i][3],
+	//			cameraTransforms[i][4], cameraTransforms[i][5], cameraTransforms[i][6], cameraTransforms[i][7],
+	//			cameraTransforms[i][8], cameraTransforms[i][9], cameraTransforms[i][10], cameraTransforms[i][11],
+	//			cameraTransforms[i][12], cameraTransforms[i][13], cameraTransforms[i][14], cameraTransforms[i][15],
+	//		)
+	//	}
 
 	//cameraTransforms[1] = cameraTransforms[1].Multiply(matrix4.RotationZ(math.Pi * 5.0 / 360.0))
 	//cameraTransforms[7] = cameraTransforms[7].Multiply(matrix4.RotationZ(math.Pi * -5.0 / 360.0))
@@ -94,14 +119,14 @@ func main() {
 	postAdj := make(map[string]*[8][2]int)
 
 	postAdj["CYBRA"] = &[8][2]int{}
-	postAdj["CYBRA"][0] = [2]int{0, -2}
-	postAdj["CYBRA"][1] = [2]int{0, -2}
+	postAdj["CYBRA"][0] = [2]int{0, -1}
+	postAdj["CYBRA"][1] = [2]int{0, -1}
 	postAdj["CYBRA"][2] = [2]int{0, -2}
-	postAdj["CYBRA"][3] = [2]int{0, -2}
-	postAdj["CYBRA"][4] = [2]int{0, -2}
-	postAdj["CYBRA"][5] = [2]int{0, -1}
-	postAdj["CYBRA"][6] = [2]int{0, -1}
-	postAdj["CYBRA"][7] = [2]int{0, -1}
+	postAdj["CYBRA"][3] = [2]int{0, -5}
+	postAdj["CYBRA"][4] = [2]int{0, -5}
+	postAdj["CYBRA"][5] = [2]int{0, -4}
+	postAdj["CYBRA"][6] = [2]int{0, -4}
+	postAdj["CYBRA"][7] = [2]int{0, -4}
 
 	postAdj["SPIDA"] = &[8][2]int{}
 	postAdj["SPIDA"][0] = [2]int{0, 0}
@@ -114,8 +139,7 @@ func main() {
 	postAdj["SPIDA"][7] = [2]int{0, 2}
 
 	for _, baseName := range baseNames {
-		frame := 0
-		{
+		for frame := 0; frame < 5; frame++ {
 			frameCh := uint8('A' + frame)
 			baseFrameLumpName := fmt.Sprintf("%s%c", baseName, frameCh)
 
@@ -138,8 +162,6 @@ func main() {
 								lumpsFound++
 							}
 						}
-						// break when 8 found:
-						return lumpsFound == 8
 					}
 				}
 
@@ -153,137 +175,161 @@ func main() {
 								lumpsFound++
 							}
 						}
-						// break when 8 found:
-						return lumpsFound == 8
 					}
 				}
 
-				return false
+				// break when 8 found:
+				return lumpsFound == 8
 			})
 
-			// find image extents of full rotation:
-			maxwidth := 0
-			maxheight := 0
-			for p, lump := range lumps {
-				if lump == nil {
-					panic(fmt.Sprintf("could not find lump %c%d", frameCh, p+1))
-				}
-				spr := lump.Data
-
-				width := int(le.Uint16(spr[0:2]))
-				height := int(le.Uint16(spr[2:4]))
-				leftoffs := int(int16(le.Uint16(spr[4:6])))
-				topoffs := int(int16(le.Uint16(spr[6:8])))
-
-				height += 16
-				if width > maxwidth {
-					maxwidth = width
-				}
-				if height > maxheight {
-					maxheight = height
-				}
-				_, _ = leftoffs, topoffs
-			}
+			xmin := 256
+			ymin := 256
+			xmax := 0
+			ymax := 0
 
 			rotations := [8]*image.Paletted{}
 			for p, lump := range lumps {
 				spr := lump.Data
 				size := uint32(len(spr))
 
-				{
-					width := int(le.Uint16(spr[0:2]))
-					height := int(le.Uint16(spr[2:4]))
-					leftoffs := int(int16(le.Uint16(spr[4:6])))
-					topoffs := int(int16(le.Uint16(spr[6:8])))
-					_, _, _ = leftoffs, topoffs, height
+				width := int(le.Uint16(spr[0:2]))
+				height := int(le.Uint16(spr[2:4]))
+				leftoffs := int(int16(le.Uint16(spr[4:6])))
+				topoffs := int(int16(le.Uint16(spr[6:8])))
+				_, _, _ = leftoffs, topoffs, height
 
-					rect := image.Rect(0, 0, maxwidth, maxheight)
-					img := image.NewPaletted(rect, pal)
-					for i := range img.Pix {
-						img.Pix[i] = 0xFF
-					}
-
-					if adj, ok := postAdj[baseFrameLumpName]; ok && adj != nil {
-						leftoffs += adj[p][0]
-						topoffs += adj[p][1]
-					}
-
-					fmt.Printf("%s%d: (%d, %d)\n", baseFrameLumpName, p+1, leftoffs, topoffs)
-
-					xadj := maxwidth/2 - leftoffs
-					yadj := maxheight - 16 - topoffs
-
-					for i := 0; i < width; i++ {
-						runOffs := le.Uint32(spr[8+i*4 : 8+i*4+4])
-
-					posts:
-						for runOffs < size {
-							run := spr[runOffs:size]
-
-							ystart := int(run[0])
-							if ystart == 0xff {
-								break posts
-							}
-
-							length := int(run[1])
-							// skip unused byte
-							runOffs += 3
-							if lump.HFlip {
-								// h-flip:
-								for j := 3; j < 3+length; j++ {
-									img.SetColorIndex(xadj+width-1-i, yadj+ystart+j-3, run[j])
-								}
-							} else {
-								for j := 3; j < 3+length; j++ {
-									img.SetColorIndex(xadj+i, yadj+ystart+j-3, run[j])
-								}
-							}
-							runOffs += uint32(length)
-							runOffs++
-						}
-					}
-
-					rotations[p] = img
-
-					func() {
-						f, err := os.Create(fmt.Sprintf("fr-%s%c%d.png", baseName, frameCh, p+1))
-						if err != nil {
-							panic(err)
-						}
-						defer f.Close()
-						err = png.Encode(f, img)
-						if err != nil {
-							panic(err)
-						}
-					}()
+				rect := image.Rect(0, 0, 256, 256)
+				img := image.NewPaletted(rect, pal)
+				for i := range img.Pix {
+					img.Pix[i] = 0xFF
 				}
+
+				if adj, ok := postAdj[baseFrameLumpName]; ok && adj != nil {
+					leftoffs += adj[p][0]
+					topoffs += adj[p][1]
+				}
+
+				fmt.Printf("%s%d: (%d, %d)\n", baseFrameLumpName, p+1, leftoffs, topoffs)
+
+				xadj := 256/2 - leftoffs
+				yadj := 256 - 16 - topoffs
+
+				for i := 0; i < width; i++ {
+					runOffs := le.Uint32(spr[8+i*4 : 8+i*4+4])
+
+				posts:
+					for runOffs < size {
+						run := spr[runOffs:size]
+
+						ystart := int(run[0])
+						if ystart == 0xff {
+							break posts
+						}
+
+						length := int(run[1])
+						// skip unused byte
+						runOffs += 3
+						if lump.HFlip {
+							// h-flip:
+							x := xadj + width - 1 - i
+							if x < xmin {
+								xmin = x
+							}
+							if x > xmax {
+								xmax = x
+							}
+							for j := 3; j < 3+length; j++ {
+								y := yadj + ystart + j - 3
+								if y < ymin {
+									ymin = y
+								}
+								if y > ymax {
+									ymax = y
+								}
+								img.SetColorIndex(x, y, run[j])
+							}
+						} else {
+							x := xadj + i
+							if x < xmin {
+								xmin = x
+							}
+							if x > xmax {
+								xmax = x
+							}
+							for j := 3; j < 3+length; j++ {
+								y := yadj + ystart + j - 3
+								if y < ymin {
+									ymin = y
+								}
+								if y > ymax {
+									ymax = y
+								}
+								img.SetColorIndex(x, y, run[j])
+							}
+						}
+						runOffs += uint32(length)
+						runOffs++
+					}
+				}
+
+				rotations[p] = img
+
+				func() {
+					f, err := os.Create(fmt.Sprintf("fr-%s%c%d.png", baseName, frameCh, p+1))
+					if err != nil {
+						panic(err)
+					}
+					defer f.Close()
+					err = png.Encode(f, img)
+					if err != nil {
+						panic(err)
+					}
+				}()
 			}
+
+			fmt.Printf("%d, %d, %d, %d\n", xmin, ymin, xmax, ymax)
+			for p, img := range rotations {
+				// extract minimal image:
+				rotations[p] = image.NewPaletted(image.Rect(0, 0, xmax-xmin, ymax-ymin), img.Palette)
+				draw.Draw(rotations[p], rotations[p].Rect, img, image.Point{X: xmin, Y: ymin}, draw.Over)
+			}
+
+			maxwidth := xmax - xmin
+			maxheight := ymax - ymin
+
+			maxx := 256
+			maxy := 256
+			maxz := 256
 
 			// Create a voxel volume
 			// X - (width)
 			// Y / (depth)
 			// Z | (height)
-			voxels := make([][][]uint8, maxwidth)
-			for i := 0; i < maxwidth; i++ {
-				voxels[i] = make([][]uint8, maxwidth)
-				for j := 0; j < maxwidth; j++ {
-					voxels[i][j] = make([]uint8, maxheight)
+			voxels := make([][][]uint8, maxx)
+			for i := 0; i < maxx; i++ {
+				voxels[i] = make([][]uint8, maxy)
+				for j := 0; j < maxy; j++ {
+					voxels[i][j] = make([]uint8, maxz)
 				}
 			}
 
-			volume := make([][][]bool, maxwidth)
-			for i := 0; i < maxwidth; i++ {
-				volume[i] = make([][]bool, maxwidth)
-				for j := 0; j < maxwidth; j++ {
-					volume[i][j] = make([]bool, maxheight)
+			volume := make([][][]bool, maxx)
+			for i := 0; i < maxx; i++ {
+				volume[i] = make([][]bool, maxy)
+				for j := 0; j < maxy; j++ {
+					volume[i][j] = make([]bool, maxz)
 				}
 			}
 
-			horizCenter := float64(maxwidth) / 2
-			vertCenter := float64(maxheight) / 2
+			horizCenter := float64(maxwidth) / 2.0
+			vertCenter := float64(maxheight) / 2.0
+
+			xCenter := float64(maxx) / 2.0
+			yCenter := float64(maxy) / 2.0
+			zCenter := float64(maxz) / 2.0
 
 			const step = 4
-			radius := float64(maxwidth) * 1.414213562373095
+			radius := float64(maxwidth) * math.Cos(0.25*math.Pi)
 			halfRadius := radius / 2.0
 
 			if true {
@@ -295,7 +341,7 @@ func main() {
 
 						for u := 0; u < maxwidth; u++ {
 							for v := 0; v < maxheight; v++ {
-								c := img.ColorIndexAt(u, v)
+								c := img.ColorIndexAt(u, maxheight-1-v)
 								if c != 0xFF {
 									for t := 0.0; t < radius*step; t++ {
 										p := vector3.V{
@@ -305,21 +351,21 @@ func main() {
 										}
 										p = cameraTransforms[reorder[i]].Transform(p)
 
-										x := int(math.Round(p.X + horizCenter))
-										if x < 0 || x >= maxwidth {
+										x := int(math.Round(p.X + xCenter))
+										if x < 0 || x >= maxx {
 											continue
 										}
-										y := int(math.Round(p.Y + horizCenter))
-										if y < 0 || y >= maxwidth {
+										y := int(math.Round(p.Y + yCenter))
+										if y < 0 || y >= maxy {
 											continue
 										}
-										z := int(math.Round(p.Z + vertCenter))
-										if z < 0 || z >= maxheight {
+										z := int(math.Round(p.Z + zCenter))
+										if z < 0 || z >= maxz {
 											continue
 										}
 
-										volume[x][y][maxheight-1-z] = true
-										voxels[x][y][maxheight-1-z] = c
+										volume[x][y][z] = true
+										voxels[x][y][z] = c
 									}
 								}
 							}
@@ -342,7 +388,7 @@ func main() {
 
 						for u := 0; u < maxwidth; u++ {
 							for v := 0; v < maxheight; v++ {
-								c := img.ColorIndexAt(u, v)
+								c := img.ColorIndexAt(u, maxheight-1-v)
 								if c == 0xFF {
 									for t := 0.0; t < radius*step; t++ {
 										p := vector3.V{
@@ -352,20 +398,20 @@ func main() {
 										}
 										p = cameraTransforms[reorder[i]].Transform(p)
 
-										x := int(math.Round(p.X + horizCenter))
-										if x < 0 || x >= maxwidth {
+										x := int(math.Round(p.X + xCenter))
+										if x < 0 || x >= maxx {
 											continue
 										}
-										y := int(math.Round(p.Y + horizCenter))
-										if y < 0 || y >= maxwidth {
+										y := int(math.Round(p.Y + yCenter))
+										if y < 0 || y >= maxy {
 											continue
 										}
-										z := int(math.Round(p.Z + vertCenter))
-										if z < 0 || z >= maxheight {
+										z := int(math.Round(p.Z + zCenter))
+										if z < 0 || z >= maxz {
 											continue
 										}
 
-										volume[x][y][maxheight-1-z] = false
+										volume[x][y][z] = false
 									}
 								}
 							}
@@ -382,20 +428,20 @@ func main() {
 									}
 									p = cameraTransforms[reorder[i]].Transform(p)
 
-									x := int(math.Round(p.X + horizCenter))
-									if x < 0 || x >= maxwidth {
+									x := int(math.Round(p.X + xCenter))
+									if x < 0 || x >= maxx {
 										continue
 									}
-									y := int(math.Round(p.Y + horizCenter))
-									if y < 0 || y >= maxwidth {
+									y := int(math.Round(p.Y + yCenter))
+									if y < 0 || y >= maxy {
 										continue
 									}
-									z := int(math.Round(p.Z + vertCenter))
-									if z < 0 || z >= maxheight {
+									z := int(math.Round(p.Z + zCenter))
+									if z < 0 || z >= maxz {
 										continue
 									}
 
-									volume[x][y][maxheight-1-z] = false
+									volume[x][y][z] = false
 								}
 
 								for t := 0.0; t < radius*step; t++ {
@@ -406,20 +452,20 @@ func main() {
 									}
 									p = cameraTransforms[reorder[i]].Transform(p)
 
-									x := int(math.Round(p.X + horizCenter))
-									if x < 0 || x >= maxwidth {
+									x := int(math.Round(p.X + xCenter))
+									if x < 0 || x >= maxx {
 										continue
 									}
-									y := int(math.Round(p.Y + horizCenter))
-									if y < 0 || y >= maxwidth {
+									y := int(math.Round(p.Y + yCenter))
+									if y < 0 || y >= maxy {
 										continue
 									}
-									z := int(math.Round(p.Z + vertCenter))
-									if z < 0 || z >= maxheight {
+									z := int(math.Round(p.Z + zCenter))
+									if z < 0 || z >= maxz {
 										continue
 									}
 
-									volume[x][y][maxheight-1-z] = false
+									volume[x][y][z] = false
 								}
 							}
 						}
@@ -433,7 +479,7 @@ func main() {
 						img := rotations[reorder[i]]
 						for u := 0; u < maxwidth; u++ {
 							for v := 0; v < maxheight; v++ {
-								c := img.ColorIndexAt(u, v)
+								c := img.ColorIndexAt(u, maxheight-1-v)
 								if c != 0xFF {
 									for t := 0.0; t < radius*step; t++ {
 										p := vector3.V{
@@ -443,23 +489,23 @@ func main() {
 										}
 										p = cameraTransforms[reorder[i]].Transform(p)
 
-										x := int(math.Round(p.X + horizCenter))
-										if x < 0 || x >= maxwidth {
+										x := int(math.Round(p.X + xCenter))
+										if x < 0 || x >= maxx {
 											continue
 										}
-										y := int(math.Round(p.Y + horizCenter))
-										if y < 0 || y >= maxwidth {
+										y := int(math.Round(p.Y + yCenter))
+										if y < 0 || y >= maxy {
 											continue
 										}
-										z := int(math.Round(p.Z + vertCenter))
-										if z < 0 || z >= maxheight {
+										z := int(math.Round(p.Z + zCenter))
+										if z < 0 || z >= maxz {
 											continue
 										}
 
-										voxels[x][y][maxheight-1-z] = c
+										voxels[x][y][z] = c
 
 										// only color the surface:
-										if volume[x][y][maxheight-1-z] {
+										if volume[x][y][z] {
 											break
 										}
 									}
@@ -470,35 +516,36 @@ func main() {
 				}
 			} else {
 				// projection and rotation test:
-				for i := 0; i < 8; i++ {
+				angles := []int{0, 1, 2, 3, 4, 5, 6, 7}
+				for _, i := range angles {
 					img := rotations[i]
 
 					for u := 0; u < maxwidth; u++ {
 						for v := 0; v < maxheight; v++ {
-							c := img.ColorIndexAt(u, v)
+							c := img.ColorIndexAt(u, maxheight-1-v)
 							if c != 0xFF {
 								p := vector3.V{
 									X: float64(u) - horizCenter,
-									Y: -42,
+									Y: -halfRadius,
 									Z: float64(v) - vertCenter,
 								}
 								p = cameraTransforms[i].Transform(p)
 
-								x := int(math.Round(p.X + horizCenter))
-								if x < 0 || x >= maxwidth {
+								x := int(math.Round(p.X + xCenter))
+								if x < 0 || x >= maxx {
 									continue
 								}
-								y := int(math.Round(p.Y + horizCenter))
-								if y < 0 || y >= maxwidth {
+								y := int(math.Round(p.Y + yCenter))
+								if y < 0 || y >= maxy {
 									continue
 								}
-								z := int(math.Round(p.Z + vertCenter))
-								if z < 0 || z >= maxheight {
+								z := int(math.Round(p.Z + zCenter))
+								if z < 0 || z >= maxz {
 									continue
 								}
 
-								volume[x][y][maxheight-1-z] = true
-								voxels[x][y][maxheight-1-z] = c
+								volume[x][y][z] = true
+								voxels[x][y][z] = c
 							}
 						}
 					}
@@ -510,70 +557,15 @@ func main() {
 				os.ExpandEnv(
 					fmt.Sprintf("$HOME/Downloads/MagicaVoxel-0.99.6.2-macos-10.15/vox/mdl-%s%c.vox", baseName, frameCh),
 				),
-				uint32(maxwidth),
-				uint32(maxwidth),
-				uint32(maxheight),
+				uint32(maxx),
+				uint32(maxy),
+				uint32(maxz),
 				pal,
 				voxels,
 				volume,
 			)
 			fmt.Printf("mdl-%s%c.vox: saved\n", baseName, frameCh)
 		}
-	}
-}
-
-// Check if a ray intersects with a plane
-func intersects(rayStart, rayEnd, planeNormal [3]float64) (possible bool, intersection [3]float64) {
-	// Compute direction of ray
-	dir := [3]float64{
-		rayEnd[0] - rayStart[0],
-		rayEnd[1] - rayStart[1],
-		rayEnd[2] - rayStart[2],
-	}
-
-	// Check if ray is parallel to plane
-	denom := vdot(planeNormal, dir)
-	if denom == 0 {
-		possible = false
-		return
-	}
-
-	// Compute intersection point between ray and plane
-	t := vdot(planeNormal, rayStart) / denom
-	if t < 0 {
-		possible = false
-		return
-	}
-
-	intersection = [3]float64{
-		rayStart[0] + t*dir[0],
-		rayStart[1] + t*dir[1],
-		rayStart[2] + t*dir[2],
-	}
-
-	possible = true
-	return
-}
-
-// Dot product of two 3D vectors
-func vdot(a, b [3]float64) float64 {
-	return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
-}
-
-func vrotzangle(a [3]float64, theta float64) [3]float64 {
-	c, s := math.Cos(theta), math.Sin(theta)
-	return [3]float64{
-		a[0]*c - a[1]*s,
-		a[0]*s + a[1]*c,
-		a[2],
-	}
-}
-
-func vrotzvec(a [3]float64, v [3]float64) [3]float64 {
-	return [3]float64{
-		a[0]*v[0] - a[1]*v[1],
-		a[0]*v[1] + a[1]*v[0],
-		a[2],
 	}
 }
 
