@@ -111,7 +111,8 @@ func main() {
 	}
 
 	//baseNames := []string{"CYBR", "SPID", "VILE", "POSS", "SPOS", "CPOS", "TROO", "SARG"}
-	baseNames := []string{"CYBR", "SPID"}
+	baseNames := []string{"CYBR", "VILE", "POSS", "SPOS", "CPOS", "TROO", "SARG"}
+	//baseNames := []string{"CYBR", "SPID"}
 	//baseNames := []string{"CYBR"}
 	//baseNames := []string{"SPID"}
 
@@ -138,8 +139,18 @@ func main() {
 	postAdj["SPIDA"][6] = [2]int{0, 2}
 	postAdj["SPIDA"][7] = [2]int{0, 2}
 
+	postAdj["SPOSA"] = &[8][2]int{}
+	postAdj["SPOSA"][0] = [2]int{-3, 0}
+	postAdj["SPOSA"][1] = [2]int{0, 0}
+	postAdj["SPOSA"][2] = [2]int{-1, 0}
+	postAdj["SPOSA"][3] = [2]int{0, 0}
+	postAdj["SPOSA"][4] = [2]int{-1, 2}
+	postAdj["SPOSA"][5] = [2]int{0, 0}
+	postAdj["SPOSA"][6] = [2]int{0, 0}
+	postAdj["SPOSA"][7] = [2]int{0, 0}
+
 	for _, baseName := range baseNames {
-		for frame := 0; frame < 5; frame++ {
+		for frame := 0; frame < 1; frame++ {
 			frameCh := uint8('A' + frame)
 			baseFrameLumpName := fmt.Sprintf("%s%c", baseName, frameCh)
 
@@ -198,7 +209,7 @@ func main() {
 				topoffs := int(int16(le.Uint16(spr[6:8])))
 				_, _, _ = leftoffs, topoffs, height
 
-				rect := image.Rect(0, 0, 384, 256)
+				rect := image.Rect(0, 0, 300, 192)
 				img := image.NewPaletted(rect, pal)
 				for i := range img.Pix {
 					img.Pix[i] = 0xFF
@@ -211,8 +222,8 @@ func main() {
 
 				fmt.Printf("%s%d: (%d, %d)\n", baseFrameLumpName, p+1, leftoffs, topoffs)
 
-				xadj := 384/2 - leftoffs
-				yadj := 256 - 16 - topoffs
+				xadj := 300/2 - leftoffs
+				yadj := 192 - 16 - topoffs
 
 				for i := 0; i < width; i++ {
 					runOffs := le.Uint32(spr[8+i*4 : 8+i*4+4])
@@ -329,13 +340,74 @@ func main() {
 			zCenter := float64(maxz) / 2.0
 
 			const step = 4
-			radius := float64(maxwidth) * math.Cos(0.25*math.Pi)
+			radius := float64(maxwidth) * 2
 			halfRadius := radius / 2.0
 
-			if true {
-				fmt.Printf("mdl-%s%c.vox: voxelize step 1/3\n", baseName, frameCh)
+			{
+				// projection and rotation test:
+				angles := []int{0, 1, 2, 3, 4, 5, 6, 7}
+				for _, i := range angles {
+					img := rotations[i]
 
+					for u := 0; u < maxwidth; u++ {
+						for v := 0; v < maxheight; v++ {
+							c := img.ColorIndexAt(u, maxheight-1-v)
+							if c != 0xFF {
+								p := vector3.V{
+									X: float64(u) - horizCenter,
+									Y: -halfRadius,
+									Z: float64(v) - vertCenter,
+								}
+								p = cameraTransforms[i].Transform(p)
+
+								x := int(math.Round(p.X + xCenter))
+								if x < 0 || x >= maxx {
+									continue
+								}
+								y := int(math.Round(p.Y + yCenter))
+								if y < 0 || y >= maxy {
+									continue
+								}
+								z := int(math.Round(p.Z + zCenter))
+								if z < 0 || z >= maxz {
+									continue
+								}
+
+								volume[x][y][z] = true
+								voxels[x][y][z] = c
+							}
+						}
+					}
+				}
+
+				fmt.Printf("prj-%s%c.vox: saving...\n", baseName, frameCh)
+				err = saveVoxel(
+					os.ExpandEnv(
+						fmt.Sprintf("$HOME/Downloads/MagicaVoxel-0.99.6.2-macos-10.15/vox/prj-%s%c.vox", baseName, frameCh),
+					),
+					uint32(maxx),
+					uint32(maxy),
+					uint32(maxz),
+					pal,
+					voxels,
+					volume,
+				)
+				fmt.Printf("prj-%s%c.vox: saved\n", baseName, frameCh)
+
+				// reset:
+				for x := 0; x < maxx; x++ {
+					for y := 0; y < maxy; y++ {
+						for z := 0; z < maxz; z++ {
+							volume[x][y][z] = false
+							voxels[x][y][z] = 0
+						}
+					}
+				}
+			}
+
+			{
 				if true {
+					fmt.Printf("mdl-%s%c.vox: voxelize step 1/3\n", baseName, frameCh)
 					for i := range reorder {
 						img := rotations[reorder[i]]
 
@@ -418,7 +490,7 @@ func main() {
 						}
 
 						// wipe out anything outside the image bounds:
-						for u := maxwidth; u < int(float64(maxwidth)*1.4142136); u++ {
+						for u := maxwidth; u < int(radius); u++ {
 							for v := 0; v < maxheight; v++ {
 								for t := 0.0; t < radius*step; t++ {
 									p := vector3.V{
@@ -481,6 +553,7 @@ func main() {
 							for v := 0; v < maxheight; v++ {
 								c := img.ColorIndexAt(u, maxheight-1-v)
 								if c != 0xFF {
+									depth := 0
 									for t := 0.0; t < radius*step; t++ {
 										p := vector3.V{
 											X: float64(u) - horizCenter,
@@ -506,7 +579,10 @@ func main() {
 
 										// only color the surface:
 										if volume[x][y][z] {
-											break
+											depth++
+											if depth > 3 {
+												break
+											}
 										}
 									}
 								}
@@ -514,57 +590,21 @@ func main() {
 						}
 					}
 				}
-			} else {
-				// projection and rotation test:
-				angles := []int{0, 1, 2, 3, 4, 5, 6, 7}
-				for _, i := range angles {
-					img := rotations[i]
 
-					for u := 0; u < maxwidth; u++ {
-						for v := 0; v < maxheight; v++ {
-							c := img.ColorIndexAt(u, maxheight-1-v)
-							if c != 0xFF {
-								p := vector3.V{
-									X: float64(u) - horizCenter,
-									Y: -halfRadius,
-									Z: float64(v) - vertCenter,
-								}
-								p = cameraTransforms[i].Transform(p)
-
-								x := int(math.Round(p.X + xCenter))
-								if x < 0 || x >= maxx {
-									continue
-								}
-								y := int(math.Round(p.Y + yCenter))
-								if y < 0 || y >= maxy {
-									continue
-								}
-								z := int(math.Round(p.Z + zCenter))
-								if z < 0 || z >= maxz {
-									continue
-								}
-
-								volume[x][y][z] = true
-								voxels[x][y][z] = c
-							}
-						}
-					}
-				}
+				fmt.Printf("mdl-%s%c.vox: saving...\n", baseName, frameCh)
+				err = saveVoxel(
+					os.ExpandEnv(
+						fmt.Sprintf("$HOME/Downloads/MagicaVoxel-0.99.6.2-macos-10.15/vox/mdl-%s%c.vox", baseName, frameCh),
+					),
+					uint32(maxx),
+					uint32(maxy),
+					uint32(maxz),
+					pal,
+					voxels,
+					volume,
+				)
+				fmt.Printf("mdl-%s%c.vox: saved\n", baseName, frameCh)
 			}
-
-			fmt.Printf("mdl-%s%c.vox: saving...\n", baseName, frameCh)
-			err = saveVoxel(
-				os.ExpandEnv(
-					fmt.Sprintf("$HOME/Downloads/MagicaVoxel-0.99.6.2-macos-10.15/vox/mdl-%s%c.vox", baseName, frameCh),
-				),
-				uint32(maxx),
-				uint32(maxy),
-				uint32(maxz),
-				pal,
-				voxels,
-				volume,
-			)
-			fmt.Printf("mdl-%s%c.vox: saved\n", baseName, frameCh)
 		}
 	}
 }
